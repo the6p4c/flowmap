@@ -8,9 +8,14 @@ use std::str::FromStr;
 /// bit" which determines if the variable is negated/inverted.
 #[derive(Debug, PartialEq, Copy, Clone)]
 #[repr(transparent)]
-pub struct Literal(usize);
+pub struct Literal(pub usize);
 
 impl Literal {
+    /// Builds a literal out of a variable index and sign bit.
+    pub fn from_variable(variable: usize, is_inverted: bool) -> Literal {
+        Literal(variable * 2 + if is_inverted { 1 } else { 0 })
+    }
+
     /// Returns the variable the literal refers to.
     pub fn variable(&self) -> usize {
         self.0 / 2
@@ -293,8 +298,11 @@ mod tests {
             (101, 50, true),
         ] {
             let literal = Literal(*literal);
+
             assert_eq!(literal.variable(), *variable);
             assert_eq!(literal.is_inverted(), *is_inverted);
+
+            assert_eq!(Literal::from_variable(*variable, *is_inverted), literal);
         }
     }
 
