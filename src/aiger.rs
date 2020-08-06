@@ -98,31 +98,30 @@ pub enum Aiger {
 }
 
 impl Aiger {
+    /// Ensures the literals within the record are valid, returning the record
+    /// if so or an error if one was detected.
+    fn validate(self) -> Result<Aiger, AigerError> {
+        match self {
+            Aiger::Input(l) if l.is_inverted() => Err(AigerError::InvalidInverted),
+            Aiger::Latch { output, .. } if output.is_inverted() => Err(AigerError::InvalidInverted),
+            Aiger::AndGate { output, .. } if output.is_inverted() => Err(AigerError::InvalidInverted),
+            _ => Ok(self),
+        }
+    }
+
     fn parse_input(literals: &[Literal]) -> Result<Aiger, AigerError> {
         match literals {
-            [input] => {
-                if !input.is_inverted() {
-                    Ok(Aiger::Input(*input))
-                } else {
-                    Err(AigerError::InvalidInverted)
-                }
-            }
+            [input] => Ok(Aiger::Input(*input)),
             _ => Err(AigerError::InvalidLiteralCount),
         }
     }
 
     fn parse_latch(literals: &[Literal]) -> Result<Aiger, AigerError> {
         match literals {
-            [output, input] => {
-                if !output.is_inverted() {
-                    Ok(Aiger::Latch {
-                        output: *output,
-                        input: *input,
-                    })
-                } else {
-                    Err(AigerError::InvalidInverted)
-                }
-            }
+            [output, input] => Ok(Aiger::Latch {
+                output: *output,
+                input: *input,
+            }),
             _ => Err(AigerError::InvalidLiteralCount),
         }
     }
@@ -136,16 +135,10 @@ impl Aiger {
 
     fn parse_and_gate(literals: &[Literal]) -> Result<Aiger, AigerError> {
         match literals {
-            [output, input1, input2] => {
-                if !output.is_inverted() {
-                    Ok(Aiger::AndGate {
-                        output: *output,
-                        inputs: [*input1, *input2],
-                    })
-                } else {
-                    Err(AigerError::InvalidInverted)
-                }
-            }
+            [output, input1, input2] => Ok(Aiger::AndGate {
+                output: *output,
+                inputs: [*input1, *input2],
+            }),
             _ => Err(AigerError::InvalidLiteralCount),
         }
     }
@@ -233,7 +226,8 @@ impl Reader {
                 .map(|s| usize::from_str_radix(s, 10).map(Literal))
                 .collect::<Result<Vec<_>, _>>()
                 .map_err(|_| AigerError::InvalidLiteral)?;
-            parser(&literals)
+
+            parser(&literals)?.validate()
         });
         let records_iter = Box::new(records_iter);
 
