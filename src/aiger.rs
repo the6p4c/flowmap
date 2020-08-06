@@ -100,13 +100,35 @@ pub enum Aiger {
 impl Aiger {
     /// Ensures the literals within the record are valid, returning the record
     /// if so or an error if one was detected.
-    fn validate(self) -> Result<Aiger, AigerError> {
+    fn validate(self, header_m: usize) -> Result<Aiger, AigerError> {
         match self {
-            Aiger::Input(l) if l.is_inverted() => Err(AigerError::InvalidInverted),
-            Aiger::Latch { output, .. } if output.is_inverted() => Err(AigerError::InvalidInverted),
-            Aiger::AndGate { output, .. } if output.is_inverted() => Err(AigerError::InvalidInverted),
-            _ => Ok(self),
+            Aiger::Input(l) if l.is_inverted() => return Err(AigerError::InvalidInverted),
+            Aiger::Latch { output, .. } if output.is_inverted() => {
+                return Err(AigerError::InvalidInverted)
+            }
+            Aiger::AndGate { output, .. } if output.is_inverted() => {
+                return Err(AigerError::InvalidInverted)
+            }
+            _ => {}
         }
+
+        let literals = match self {
+            Aiger::Input(l) => vec![l],
+            Aiger::Latch { output, input } => vec![output, input],
+            Aiger::Output(l) => vec![l],
+            Aiger::AndGate {
+                output,
+                inputs: [input0, input1],
+            } => vec![output, input0, input1],
+        };
+
+        for literal in literals {
+            if literal.variable() > header_m {
+                return Err(AigerError::LiteralOutOfRange);
+            }
+        }
+
+        Ok(self)
     }
 
     fn parse_input(literals: &[Literal]) -> Result<Aiger, AigerError> {
@@ -152,6 +174,9 @@ pub enum AigerError {
     InvalidHeader,
     /// A literal which was not a positive integer was encountered.
     InvalidLiteral,
+    /// A literal with a variable greater than the maximum declared in the AIGER
+    /// header was encountered.
+    LiteralOutOfRange,
     /// Too many or too few literals were encountered for the expected type of
     /// record.
     InvalidLiteralCount,
@@ -220,14 +245,14 @@ impl Reader {
             .chain(parsers_output)
             .chain(parsers_and_gate);
 
-        let records_iter = lines.zip(parsers).map(|(line, parser)| {
+        let records_iter = lines.zip(parsers).map(move |(line, parser)| {
             let literals = line?
                 .split(' ')
                 .map(|s| usize::from_str_radix(s, 10).map(Literal))
                 .collect::<Result<Vec<_>, _>>()
                 .map_err(|_| AigerError::InvalidLiteral)?;
 
-            parser(&literals)?.validate()
+            parser(&literals)?.validate(header.m)
         });
         let records_iter = Box::new(records_iter);
 
@@ -472,6 +497,112 @@ mod tests {
 
         let mut records = reader.records();
         assert_eq!(records.next(), Some(Err(AigerError::InvalidInverted)));
+    }
+
+    #[test]
+    fn reader_literal_out_of_range_input() {
+        #[rustfmt::skip]
+        let reader = make_reader(concat!(
+            "aag 1 2 0 0 0\n",
+            "2\n",
+            "4\n",
+        )).unwrap();
+
+        let header = reader.header();
+        assert_eq!(
+            header,
+            Header {
+                m: 1,
+                i: 2,
+                l: 0,
+                o: 0,
+                a: 0,
+            }
+        );
+
+        let mut records = reader.records();
+        assert_eq!(records.next(), Some(Ok(Aiger::Input(Literal(2)))));
+        assert_eq!(records.next(), Some(Err(AigerError::LiteralOutOfRange)));
+    }
+
+    #[test]
+    fn reader_literal_out_of_range_latch() {
+        #[rustfmt::skip]
+        let reader = make_reader(concat!(
+            "aag 1 1 1 0 0\n",
+            "2\n",
+            "4 2\n",
+        )).unwrap();
+
+        let header = reader.header();
+        assert_eq!(
+            header,
+            Header {
+                m: 1,
+                i: 1,
+                l: 1,
+                o: 0,
+                a: 0,
+            }
+        );
+
+        let mut records = reader.records();
+        assert_eq!(records.next(), Some(Ok(Aiger::Input(Literal(2)))));
+        assert_eq!(records.next(), Some(Err(AigerError::LiteralOutOfRange)));
+    }
+
+    #[test]
+    fn reader_literal_out_of_range_output() {
+        #[rustfmt::skip]
+        let reader = make_reader(concat!(
+            "aag 1 1 0 1 0\n",
+            "2\n",
+            "4\n",
+        )).unwrap();
+
+        let header = reader.header();
+        assert_eq!(
+            header,
+            Header {
+                m: 1,
+                i: 1,
+                l: 0,
+                o: 1,
+                a: 0,
+            }
+        );
+
+        let mut records = reader.records();
+        assert_eq!(records.next(), Some(Ok(Aiger::Input(Literal(2)))));
+        assert_eq!(records.next(), Some(Err(AigerError::LiteralOutOfRange)));
+    }
+
+    #[test]
+    fn reader_literal_out_of_range_and_gate() {
+        #[rustfmt::skip]
+        let reader = make_reader(concat!(
+            "aag 2 1 0 1 1\n",
+            "2\n",
+            "4\n",
+            "4 2 6\n",
+        )).unwrap();
+
+        let header = reader.header();
+        assert_eq!(
+            header,
+            Header {
+                m: 2,
+                i: 1,
+                l: 0,
+                o: 1,
+                a: 1,
+            }
+        );
+
+        let mut records = reader.records();
+        assert_eq!(records.next(), Some(Ok(Aiger::Input(Literal(2)))));
+        assert_eq!(records.next(), Some(Ok(Aiger::Output(Literal(4)))));
+        assert_eq!(records.next(), Some(Err(AigerError::LiteralOutOfRange)));
     }
 
     #[test]
