@@ -53,6 +53,11 @@ impl<N: Default, Ni: 'static + NodeIndex, E: IncomingEdges<Ni>> BooleanNetwork<'
         }
     }
 
+    /// Returns an iterator over the valid node index values for this network.
+    pub fn nodes(&self) -> Box<dyn Iterator<Item = Ni>> {
+        Box::new((0..=self.max_node_index).map(Ni::from_node_index))
+    }
+
     /// Returns an iterator over the direct ancestors of the provided node.
     pub fn ancestors(&self, of: Ni) -> Box<dyn Iterator<Item = Ni>> {
         assert!(
@@ -206,7 +211,7 @@ mod tests {
             (11, vec![12], 3),
         ];
 
-        let mut network = BooleanNetwork::new(16);
+        let mut network = BooleanNetwork::new(15);
         for (from, tos, node_value) in &raw {
             *network.node_value_mut(*from) = *node_value;
 
@@ -256,6 +261,17 @@ mod tests {
         let network = BooleanNetwork::<(), usize, Bounded2<_>>::new(0);
 
         let _descendents = network.descendents(1);
+    }
+
+    #[test]
+    fn nodes() {
+        let network = get_network();
+
+        let mut nodes = network.nodes();
+        for i in 0..=15 {
+            assert_eq!(nodes.next(), Some(i));
+        }
+        assert_eq!(nodes.next(), None);
     }
 
     #[test]
