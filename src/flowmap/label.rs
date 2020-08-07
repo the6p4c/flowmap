@@ -57,7 +57,7 @@ fn label_node<'a, 'b, Ni: 'static + NodeIndex + std::fmt::Debug, Ie: IncomingEdg
     mut network: &'b mut FlowMapBooleanNetwork<'a, Ni, Ie>,
     node: Ni,
     k: u32,
-) -> u32 {
+) -> (u32, Vec<Ni>) {
     let p = network
         .ancestors(node)
         .map(|node| {
@@ -80,7 +80,7 @@ fn label_node<'a, 'b, Ni: 'static + NodeIndex + std::fmt::Debug, Ie: IncomingEdg
         // This also gives us an \bar{X} which only contains the node we're
         // evaluating.
         // TODO: Also return \bar{X}.
-        return p + 1;
+        return (p + 1, vec![node]);
     }
 
     let mut source = vec![];
@@ -93,7 +93,7 @@ fn label_node<'a, 'b, Ni: 'static + NodeIndex + std::fmt::Debug, Ie: IncomingEdg
         network.node_value_mut(node).flow = 0;
 
         for ancestor in ancestors {
-            *network.edge_value_mut(From(ancestor), To(node)) = (0, 0);
+            *network.edge_value_mut(From(ancestor), To(node)) = (0, 1);
             if !visited.contains(&ancestor) {
                 let (label, is_pi) = {
                     let node_value = network.node_value(ancestor);
@@ -133,9 +133,11 @@ fn label_node<'a, 'b, Ni: 'static + NodeIndex + std::fmt::Debug, Ie: IncomingEdg
     dbg!(max_flow);
 
     if max_flow <= k {
-        p
+        let mut visited2 = visited.clone();
+        visited2.push(node);
+        (p, flow.cut(&visited2))
     } else {
-        p + 1
+        (p + 1, vec![node])
     }
 }
 
@@ -153,8 +155,9 @@ fn label_network<'a, 'b, Ni: 'static + NodeIndex + std::fmt::Debug, Ie: Incoming
             continue;
         }
 
-        let label = label_node(&mut network, ni, k);
+        let (label, x_bar) = label_node(&mut network, ni, k);
         network.node_value_mut(ni).label = Some(label);
+        network.node_value_mut(ni).x_bar = x_bar;
     }
 }
 
@@ -193,7 +196,7 @@ mod tests {
     #[test]
     fn label() {
         // Fig. 5(a) from FlowMap paper, numbered top-to-bottom, left-to-right.
-        let mut network = BooleanNetwork::<NodeValue, (u32, u32), usize, Bounded2<_, _>>::new(12);
+        let mut network = BooleanNetwork::<NodeValue<usize>, (u32, u32), usize, Bounded2<_, _>>::new(12);
 
         network.add_edge(From(0), To(5));
         network.add_edge(From(1), To(5));
@@ -247,5 +250,15 @@ mod tests {
         assert_eq!(network.node_value(10).label, Some(2));
         assert_eq!(network.node_value(11).label, Some(2));
         assert_eq!(network.node_value(12).label, Some(2));
+
+        // Other nodes should have the correct \bar{X} sets
+        assert_eq!({ let mut v = network.node_value(5).x_bar.clone(); v.sort(); v }, vec![5]);
+        assert_eq!({ let mut v = network.node_value(6).x_bar.clone(); v.sort(); v }, vec![6]);
+        assert_eq!({ let mut v = network.node_value(7).x_bar.clone(); v.sort(); v }, vec![7]);
+        assert_eq!({ let mut v = network.node_value(8).x_bar.clone(); v.sort(); v }, vec![5, 6, 8]);
+        assert_eq!({ let mut v = network.node_value(9).x_bar.clone(); v.sort(); v }, vec![9]);
+        assert_eq!({ let mut v = network.node_value(10).x_bar.clone(); v.sort(); v }, vec![9, 10]);
+        assert_eq!({ let mut v = network.node_value(11).x_bar.clone(); v.sort(); v }, vec![8, 9, 10, 11]);
+        assert_eq!({ let mut v = network.node_value(12).x_bar.clone(); v.sort(); v }, vec![8, 9, 10, 11, 12]);
     }
 }

@@ -89,6 +89,41 @@ impl<Ni: 'static + NodeIndex + std::fmt::Debug, Ie: IncomingEdges<Ni, (u32, u32)
         }
     }
 
+    pub fn cut(&self, orig: &[Ni]) -> Vec<Ni> {
+        let mut reachable = vec![];
+        let mut visited = vec![];
+        let mut s = vec![Position::Source];
+        while let Some(n) = s.pop() {
+            if !visited.contains(&n) {
+                visited.push(n);
+
+                match n {
+                    Position::Source => {},
+                    Position::BeforeNode(n) => reachable.push(n),
+                    Position::AfterNode(n) => reachable.push(n),
+                    Position::Sink => continue,
+                }
+
+                for descendent in self.descendents(n) {
+                    if self.is_undir_path(n, descendent, false) {
+                        s.push(descendent);
+                    }
+                }
+
+                for ancestor in self.ancestors(n) {
+                    if self.is_undir_path(ancestor, n, true) {
+                        s.push(ancestor);
+                    }
+                }
+            }
+        }
+
+        dbg!(&reachable);
+        dbg!(&orig);
+
+        orig.iter().copied().filter(|ni| !reachable.contains(ni)).collect()
+    }
+
     fn descendents(&self, position: Position<Ni>) -> Box<dyn Iterator<Item = Position<Ni>> + '_> {
         match position {
             Position::Source => Box::new(self.source.iter().map(|(ni, _)| Position::BeforeNode(*ni))),
@@ -202,6 +237,32 @@ impl<Ni: 'static + NodeIndex + std::fmt::Debug, Ie: IncomingEdges<Ni, (u32, u32)
                 }
             }
             _ => {}
+        }
+    }
+
+    fn is_undir_path(&self, from: Position<Ni>, to: Position<Ni>, swap: bool) -> bool {
+        let (flow, cap) = self.flow_cap(from, to);
+        let is_undir_path_fwd = cap != 0;
+        let is_undir_path_bkw = flow != 0;
+
+        dbg!(from, to, flow, cap, is_undir_path_fwd, is_undir_path_bkw);
+
+        let x = if swap {
+            (to, from)
+        } else {
+            (from, to)
+        };
+
+        match x {
+            (Position::Source, Position::BeforeNode(_)) => is_undir_path_fwd,
+            (Position::BeforeNode(ni), Position::Source) => is_undir_path_bkw,
+            (Position::AfterNode(ni1), Position::BeforeNode(ni2)) if ni1 == ni2 => is_undir_path_bkw,
+            (Position::BeforeNode(ni1), Position::AfterNode(ni2)) if ni1 == ni2 => is_undir_path_fwd,
+            (Position::AfterNode(ni1), Position::BeforeNode(ni2)) => is_undir_path_fwd,
+            (Position::BeforeNode(ni1), Position::AfterNode(ni2)) => is_undir_path_bkw,
+            (Position::AfterNode(ni), Position::Sink) => is_undir_path_fwd,
+            (Position::Sink, Position::AfterNode(ni)) => is_undir_path_bkw,
+            _ => false
         }
     }
 }
