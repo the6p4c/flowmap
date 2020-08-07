@@ -14,31 +14,37 @@ pub struct From<Ni: NodeIndex>(pub Ni);
 pub struct To<Ni: NodeIndex>(pub Ni);
 
 /// Internal node representation.
-pub struct Node<'a, N: Default, Ni: NodeIndex, E: IncomingEdges<Ni>> {
-    incoming_edges: E,
+pub struct Node<'a, N: Default, E: Default, Ni: NodeIndex, Ie: IncomingEdges<Ni, E>> {
+    incoming_edges: Ie,
     value: N,
-    phantom: PhantomData<&'a Ni>,
+    phantom1: PhantomData<&'a Ni>,
+    phantom2: PhantomData<&'a E>,
 }
 
-impl<N: Default, Ni: NodeIndex, E: IncomingEdges<Ni>> Default for Node<'_, N, Ni, E> {
+impl<N: Default, E: Default, Ni: NodeIndex, Ie: IncomingEdges<Ni, E>> Default
+    for Node<'_, N, E, Ni, Ie>
+{
     fn default() -> Self {
         Node {
-            incoming_edges: E::default(),
+            incoming_edges: Ie::default(),
             value: N::default(),
-            phantom: PhantomData,
+            phantom1: PhantomData,
+            phantom2: PhantomData,
         }
     }
 }
 
 /// A boolean network.
-pub struct BooleanNetwork<'a, N: Default, Ni: NodeIndex, E: IncomingEdges<Ni>> {
-    nodes: Vec<Node<'a, N, Ni, E>>,
+pub struct BooleanNetwork<'a, N: Default, E: Default, Ni: NodeIndex, Ie: IncomingEdges<Ni, E>> {
+    nodes: Vec<Node<'a, N, E, Ni, Ie>>,
     max_node_index: usize,
 }
 
-impl<N: Default, Ni: 'static + NodeIndex, E: IncomingEdges<Ni>> BooleanNetwork<'_, N, Ni, E> {
+impl<N: Default, E: Default, Ni: 'static + NodeIndex, Ie: IncomingEdges<Ni, E>>
+    BooleanNetwork<'_, N, E, Ni, Ie>
+{
     /// Creates a new boolean network with the provided maximum index.
-    pub fn new(max_index: Ni) -> BooleanNetwork<'static, N, Ni, E> {
+    pub fn new(max_index: Ni) -> BooleanNetwork<'static, N, E, Ni, Ie> {
         let max_node_index = max_index.node_index();
 
         let num_nodes = max_node_index + 1;
@@ -108,6 +114,20 @@ impl<N: Default, Ni: 'static + NodeIndex, E: IncomingEdges<Ni>> BooleanNetwork<'
         &mut self.nodes[of.node_index()].value
     }
 
+    /// Returns a reference to the provided edge's value.
+    pub fn edge_value(&self, from: From<Ni>, to: To<Ni>) -> &E {
+        self.nodes[to.0.node_index()]
+            .incoming_edges
+            .edge_value(from)
+    }
+
+    /// Returns a mutable reference to the provided edge's value.
+    pub fn edge_value_mut(&mut self, from: From<Ni>, to: To<Ni>) -> &mut E {
+        self.nodes[to.0.node_index()]
+            .incoming_edges
+            .edge_value_mut(from)
+    }
+
     /// Adds an edge to the network graph.
     pub fn add_edge(&mut self, from: From<Ni>, to: To<Ni>) {
         assert!(
@@ -142,38 +162,60 @@ pub trait NodeIndex: PartialEq + Copy + Clone {
 }
 
 /// Trait for types which can track the incoming edges of a node.
-pub trait IncomingEdges<Ni: NodeIndex>: Default {
+pub trait IncomingEdges<Ni: NodeIndex, E: Default>: Default {
     /// Returns an iterator over the direct ancestors of the node for which the
     /// incoming edges are being tracked.
     fn ancestors(&self) -> Box<dyn Iterator<Item = Ni>>;
 
     /// Adds an incoming edge.
     fn add_edge(&mut self, from: From<Ni>);
+
+    /// Returns a reference to the provided edge's value.
+    fn edge_value(&self, from: From<Ni>) -> &E;
+
+    /// Returns a mutable reference to the provided edge's value.
+    fn edge_value_mut(&mut self, from: From<Ni>) -> &mut E;
 }
 
 /// Incoming edges tracking for a 2-bounded boolean network.
-pub struct Bounded2<Ni: NodeIndex>([Option<Ni>; 2]);
+pub struct Bounded2<Ni: NodeIndex, E: Default>([Option<(Ni, E)>; 2]);
 
-impl<Ni: 'static + NodeIndex> IncomingEdges<Ni> for Bounded2<Ni> {
+impl<E: Default, Ni: 'static + NodeIndex> IncomingEdges<Ni, E> for Bounded2<Ni, E> {
     fn ancestors(&self) -> Box<dyn Iterator<Item = Ni>> {
         match self.0 {
             [None, None] => Box::new(iter::empty()),
-            [Some(ni0), None] => Box::new(iter::once(ni0)),
-            [None, Some(ni0)] => Box::new(iter::once(ni0)),
-            [Some(ni0), Some(ni1)] => Box::new(iter::once(ni0).chain(iter::once(ni1))),
+            [Some((ni0, _)), None] => Box::new(iter::once(ni0)),
+            [None, Some((ni0, _))] => Box::new(iter::once(ni0)),
+            [Some((ni0, _)), Some((ni1, _))] => Box::new(iter::once(ni0).chain(iter::once(ni1))),
         }
     }
 
     fn add_edge(&mut self, from: From<Ni>) {
         match &mut self.0 {
-            [ni @ None, _] => *ni = Some(from.0),
-            [_, ni @ None] => *ni = Some(from.0),
+            [ni @ None, _] => *ni = Some((from.0, E::default())),
+            [_, ni @ None] => *ni = Some((from.0, E::default())),
             _ => panic!("could not add edge"),
+        }
+    }
+
+    fn edge_value(&self, from: From<Ni>) -> &E {
+        match &self.0 {
+            [Some((ni, ev)), _] if *ni == from.0 => ev,
+            [_, Some((ni, ev))] if *ni == from.0 => ev,
+            _ => panic!("edge not found"),
+        }
+    }
+
+    fn edge_value_mut(&mut self, from: From<Ni>) -> &mut E {
+        match &mut self.0 {
+            [Some((ni, ev)), _] if *ni == from.0 => ev,
+            [_, Some((ni, ev))] if *ni == from.0 => ev,
+            _ => panic!("edge not found"),
         }
     }
 }
 
-impl<Ni: 'static + NodeIndex> Default for Bounded2<Ni> {
+impl<E: Default, Ni: 'static + NodeIndex> Default for Bounded2<Ni, E> {
     fn default() -> Self {
         Bounded2([None, None])
     }
@@ -193,7 +235,7 @@ mod tests {
         }
     }
 
-    fn get_network() -> BooleanNetwork<'static, u32, usize, Bounded2<usize>> {
+    fn get_network() -> BooleanNetwork<'static, u32, u32, usize, Bounded2<usize, u32>> {
         // Fig 2 from FlowMap paper, excluding source and sink with nodes
         // numbered top-to-bottom, left-to-right.
         let raw = [
@@ -228,7 +270,7 @@ mod tests {
         expected = "node index out of bounds: the maximum node index is 0 but the node index is 1"
     )]
     fn invalid_index_add_edge_to() {
-        let mut network = BooleanNetwork::<(), usize, Bounded2<_>>::new(0);
+        let mut network = BooleanNetwork::<(), (), usize, Bounded2<_, _>>::new(0);
 
         network.add_edge(From(0), To(1));
     }
@@ -238,7 +280,7 @@ mod tests {
         expected = "node index out of bounds: the maximum node index is 0 but the node index is 1"
     )]
     fn invalid_index_add_edge_from() {
-        let mut network = BooleanNetwork::<(), usize, Bounded2<_>>::new(0);
+        let mut network = BooleanNetwork::<(), (), usize, Bounded2<_, _>>::new(0);
 
         network.add_edge(From(1), To(0));
     }
@@ -248,7 +290,7 @@ mod tests {
         expected = "node index out of bounds: the maximum node index is 0 but the node index is 1"
     )]
     fn invalid_index_add_edge_ancestors() {
-        let network = BooleanNetwork::<(), usize, Bounded2<_>>::new(0);
+        let network = BooleanNetwork::<(), (), usize, Bounded2<_, _>>::new(0);
 
         let _ancestors = network.ancestors(1);
     }
@@ -258,7 +300,7 @@ mod tests {
         expected = "node index out of bounds: the maximum node index is 0 but the node index is 1"
     )]
     fn invalid_index_add_edge_descendents() {
-        let network = BooleanNetwork::<(), usize, Bounded2<_>>::new(0);
+        let network = BooleanNetwork::<(), (), usize, Bounded2<_, _>>::new(0);
 
         let _descendents = network.descendents(1);
     }
@@ -314,5 +356,15 @@ mod tests {
         *network.node_value_mut(8) = 100;
 
         assert_eq!(*network.node_value(8), 100);
+    }
+
+    #[test]
+    fn edge_value() {
+        let mut network = get_network();
+
+        *network.edge_value_mut(From(0), To(3)) = 100;
+        assert_eq!(*network.edge_value_mut(From(0), To(3)), 100);
+        *network.edge_value_mut(From(0), To(3)) = 1;
+        assert_eq!(*network.edge_value_mut(From(0), To(3)), 1);
     }
 }
