@@ -1,6 +1,5 @@
 use std::env;
 
-mod aiger;
 mod boolean_network;
 mod flowmap;
 mod test_utils;
