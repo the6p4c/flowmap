@@ -53,7 +53,6 @@ fn label_node<Ni: 'static + NodeIndex + std::fmt::Debug>(
     node: Ni,
     k: u32,
 ) -> (u32, Vec<Ni>) {
-    dbg!(node);
     let p = network
         .ancestors(node)
         .iter()
@@ -103,14 +102,12 @@ fn label_node<Ni: 'static + NodeIndex + std::fmt::Debug>(
                 if label == Some(p) {
                     // This node needs to be collapsed
                     for ancestor2 in network.ancestors(ancestor) {
-                        println!("adding sink {:?}", *ancestor2);
                         if !sink.contains(ancestor2) {
                             sink.push(*ancestor2);
                         }
                     }
                 } else if is_pi {
                     // This node needs to be joined to the source
-                    println!("adding source {:?}", ancestor);
                     source.push(ancestor);
                 } else {
                     // TODO: Handle infinite capacity better
@@ -128,8 +125,6 @@ fn label_node<Ni: 'static + NodeIndex + std::fmt::Debug>(
     while flow.step() {
         max_flow += 1;
     }
-
-    dbg!(max_flow);
 
     if max_flow <= k {
         let mut visited2 = visited.clone();

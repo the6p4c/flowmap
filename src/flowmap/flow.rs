@@ -42,7 +42,6 @@ impl<Ni: NodeIndex + std::fmt::Debug> Flow<'_, Ni> {
             }
 
             visited.push(p);
-            eprintln!("path is now {:?} -> {:?}", ipath, p);
 
             if p == Position::Sink {
                 path = Some(ipath);
@@ -50,12 +49,11 @@ impl<Ni: NodeIndex + std::fmt::Debug> Flow<'_, Ni> {
             }
 
             for descendent in self.descendents(p) {
-                println!("considering descendent {:?}", descendent);
                 if visited.contains(&descendent) {
                     continue;
                 }
 
-                let (_, cap) = dbg!(self.flow_cap(p, descendent));
+                let (_, cap) = self.flow_cap(p, descendent);
                 if cap > 0 {
                     let mut new_path = ipath.clone();
                     new_path.push(p);
@@ -77,7 +75,7 @@ impl<Ni: NodeIndex + std::fmt::Debug> Flow<'_, Ni> {
             }
         }
 
-        match dbg!(path) {
+        match path {
             Some(path) => {
                 for (from, to) in path.iter().zip(path.iter().skip(1)) {
                     self.augment(*from, *to, 1);
@@ -117,9 +115,6 @@ impl<Ni: NodeIndex + std::fmt::Debug> Flow<'_, Ni> {
                 }
             }
         }
-
-        dbg!(&reachable);
-        dbg!(&orig);
 
         orig.iter()
             .copied()
@@ -254,8 +249,6 @@ impl<Ni: NodeIndex + std::fmt::Debug> Flow<'_, Ni> {
         let (flow, cap) = self.flow_cap(from, to);
         let is_undir_path_fwd = cap != 0;
         let is_undir_path_bkw = flow != 0;
-
-        dbg!(from, to, flow, cap, is_undir_path_fwd, is_undir_path_bkw);
 
         let x = if swap { (to, from) } else { (from, to) };
 

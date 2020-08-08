@@ -39,7 +39,6 @@ pub fn map<Ni: 'static + NodeIndex + std::fmt::Debug>(
             continue;
         }
 
-        dbg!(n, &node_value.x_bar);
         let inputs = inputs(&network, &node_value.x_bar);
         done.push(n);
         luts.push((n, inputs.clone()));

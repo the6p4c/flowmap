@@ -84,24 +84,4 @@ fn main() {
     for (output, inputs) in luts {
         println!("{:?} <= {:?}", output, inputs);
     }
-
-    //println!("digraph {{");
-    //for l in 0..=max_literal {
-    //    let l = Literal(l);
-    //    let node_value = network.node_value(l);
-    //
-    //    println!(
-    //        "l{} [label=\"literal {0} (variable {}{}){}{}\"];",
-    //        l.0,
-    //        if l.is_inverted() { "~" } else { "" },
-    //        l.variable(),
-    //        if node_value.is_pi { " PI" } else { "" },
-    //        if node_value.is_po { " PO" } else { "" },
-    //    );
-    //
-    //    for ancestor in network.ancestors(l) {
-    //        println!("l{} -> l{};", ancestor.0, l.0);
-    //    }
-    //}
-    //println!("}}");
 }
