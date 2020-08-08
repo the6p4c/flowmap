@@ -20,7 +20,9 @@ fn inputs<Ni: 'static + NodeIndex + std::fmt::Debug>(
 
 pub fn map<Ni: 'static + NodeIndex + std::fmt::Debug>(
     network: &FlowMapBooleanNetwork<Ni>,
+    k: u32,
 ) -> Vec<(Ni, Vec<Ni>)> {
+    let mut done = vec![];
     let mut luts = vec![];
 
     let mut s = (0..network.node_count())
@@ -28,6 +30,10 @@ pub fn map<Ni: 'static + NodeIndex + std::fmt::Debug>(
         .filter(|ni| network.node_value(*ni).is_po)
         .collect::<Vec<_>>();
     while let Some(n) = s.pop() {
+        if done.contains(&n) {
+            continue;
+        }
+
         let node_value = network.node_value(n);
         if node_value.is_pi && !node_value.is_po {
             continue;
@@ -35,7 +41,17 @@ pub fn map<Ni: 'static + NodeIndex + std::fmt::Debug>(
 
         dbg!(n, &node_value.x_bar);
         let inputs = inputs(&network, &node_value.x_bar);
+        done.push(n);
         luts.push((n, inputs.clone()));
+
+        let num_inputs = inputs.len();
+        assert!(
+            num_inputs > 0 && num_inputs <= (k as usize),
+            "number of inputs to LUT generating {:?} was {}, however K is {}",
+            n,
+            num_inputs,
+            k
+        );
 
         for i in inputs {
             s.push(i);

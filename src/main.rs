@@ -77,8 +77,9 @@ fn main() {
         }
     }
 
-    flowmap::label::label_network(&mut network, 4);
-    let luts = flowmap::map::map(&mut network);
+    const K: u32 = 6;
+    flowmap::label::label_network(&mut network, K);
+    let luts = flowmap::map::map(&mut network, K);
 
     for (output, inputs) in luts {
         println!("{:?} <= {:?}", output, inputs);
