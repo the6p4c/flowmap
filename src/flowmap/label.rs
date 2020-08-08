@@ -1,10 +1,11 @@
 use super::flow::*;
 use super::*;
+use std::collections::HashSet;
 
 /// Provides a topological ordering on a boolean network.
 struct TopologicalOrder<Ni: NodeIndex> {
     s: Vec<Ni>,
-    visited: Vec<Ni>,
+    visited: HashSet<Ni>,
 }
 
 impl<Ni: NodeIndex> TopologicalOrder<Ni> {
@@ -19,7 +20,7 @@ impl<Ni: NodeIndex> TopologicalOrder<Ni> {
             s,
             // We'll eventually completely fill our visited list with every node
             // on the graph, so make space now
-            visited: Vec::with_capacity(network.node_count()),
+            visited: HashSet::with_capacity(network.node_count()),
         }
     }
 
@@ -29,7 +30,7 @@ impl<Ni: NodeIndex> TopologicalOrder<Ni> {
         let n = self.s.pop();
 
         if let Some(n) = n {
-            self.visited.push(n);
+            self.visited.insert(n);
 
             for descendent in network.descendents(n) {
                 let remaining_ancestors = network
@@ -83,7 +84,8 @@ fn label_node<Ni: 'static + NodeIndex + std::fmt::Debug>(
     // to the sink, since the sink replaces the node we're labelling.
     sink.extend_from_slice(network.ancestors(node));
 
-    let mut visited = vec![];
+    let mut visited = HashSet::new();
+    visited.insert(node);
     let mut s = vec![node];
     while let Some(node) = s.pop() {
         let mut ancestors = vec![];
@@ -114,7 +116,7 @@ fn label_node<Ni: 'static + NodeIndex + std::fmt::Debug>(
                     *network.edge_value_mut(From(ancestor), To(node)) = (0, 1000);
                 }
 
-                visited.push(ancestor);
+                visited.insert(ancestor);
                 s.push(ancestor);
             }
         }
@@ -127,9 +129,7 @@ fn label_node<Ni: 'static + NodeIndex + std::fmt::Debug>(
     }
 
     if max_flow <= k {
-        let mut visited2 = visited.clone();
-        visited2.push(node);
-        (p, flow.cut(&visited2))
+        (p, flow.cut(&visited))
     } else {
         (p + 1, vec![node])
     }

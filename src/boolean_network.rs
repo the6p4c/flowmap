@@ -1,10 +1,11 @@
 //! A boolean network.
 
+use std::hash::Hash;
 use std::iter;
 
 /// Wrapper around a node index for which an edge is "from", i.e., the edge
 /// points away from the node.
-#[derive(PartialEq, Copy, Clone)]
+#[derive(Eq, PartialEq, Copy, Clone, Hash)]
 #[repr(transparent)]
 pub struct From<Ni: NodeIndex>(pub Ni);
 
@@ -20,7 +21,7 @@ impl<Ni: NodeIndex> NodeIndex for From<Ni> {
 
 /// Wrapper around a node index for which an edge is "to", i.e., the edge points
 /// to the node.
-#[derive(PartialEq, Copy, Clone)]
+#[derive(Eq, PartialEq, Copy, Clone, Hash)]
 #[repr(transparent)]
 pub struct To<Ni: NodeIndex>(pub Ni);
 
@@ -195,7 +196,7 @@ impl<N: Default, E: Default, Ni: NodeIndex> BooleanNetwork<N, E, Ni> {
 /// Network storage allocation will begin at node index zero, so implementers of
 /// NodeIndex should ideally provide node index values which also begin at zero
 /// to avoid wasted storage space.
-pub trait NodeIndex: PartialEq + Copy + Clone {
+pub trait NodeIndex: Eq + PartialEq + Copy + Clone + Hash {
     /// Returns an instance of the type from a bare node index.
     fn from_node_index(ni: usize) -> Self;
 

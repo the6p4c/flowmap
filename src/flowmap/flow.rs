@@ -1,8 +1,9 @@
 use super::*;
 use crate::boolean_network::*;
+use std::collections::HashSet;
 use std::iter;
 
-#[derive(Debug, PartialEq, Copy, Clone)]
+#[derive(Debug, Eq, PartialEq, Copy, Clone, Hash)]
 enum Position<Ni: NodeIndex> {
     Source,
     Sink,
@@ -33,7 +34,7 @@ impl<Ni: NodeIndex + std::fmt::Debug> Flow<'_, Ni> {
     }
 
     pub fn step(&mut self) -> bool {
-        let mut visited = vec![];
+        let mut visited = HashSet::new();
         let mut path = None;
         let mut s = vec![(Position::Source, vec![])];
         'outer: while let Some((p, ipath)) = s.pop() {
@@ -41,7 +42,7 @@ impl<Ni: NodeIndex + std::fmt::Debug> Flow<'_, Ni> {
                 continue;
             }
 
-            visited.push(p);
+            visited.insert(p);
 
             if p == Position::Sink {
                 path = Some(ipath);
@@ -87,18 +88,22 @@ impl<Ni: NodeIndex + std::fmt::Debug> Flow<'_, Ni> {
         }
     }
 
-    pub fn cut(&self, orig: &[Ni]) -> Vec<Ni> {
-        let mut reachable = vec![];
-        let mut visited = vec![];
+    pub fn cut(&self, orig: &HashSet<Ni>) -> Vec<Ni> {
+        let mut reachable = HashSet::new();
+        let mut visited = HashSet::new();
         let mut s = vec![Position::Source];
         while let Some(n) = s.pop() {
             if !visited.contains(&n) {
-                visited.push(n);
+                visited.insert(n);
 
                 match n {
                     Position::Source => {}
-                    Position::BeforeNode(n) => reachable.push(n),
-                    Position::AfterNode(n) => reachable.push(n),
+                    Position::BeforeNode(n) => {
+                        reachable.insert(n);
+                    }
+                    Position::AfterNode(n) => {
+                        reachable.insert(n);
+                    }
                     Position::Sink => continue,
                 }
 
@@ -116,10 +121,8 @@ impl<Ni: NodeIndex + std::fmt::Debug> Flow<'_, Ni> {
             }
         }
 
-        orig.iter()
-            .copied()
-            .filter(|ni| !reachable.contains(ni))
-            .collect()
+        // Our "reachable" set is X'', so generate \bar{X}''
+        orig.difference(&reachable).copied().collect()
     }
 
     fn descendents(&self, position: Position<Ni>) -> Box<dyn Iterator<Item = Position<Ni>> + '_> {

@@ -2,9 +2,9 @@
 # It is not intended for manual editing.
 [[package]]
 name = "aiger"
-version = "0.1.0"
+version = "0.1.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "5259a8f636350d811827d54bff652f00627cfaee1eceb2ce9dc0958027cab5ad"
+checksum = "b64b87e065e987cacdb8887564303a967f58fbad7ac7c4cd7e1f943f955d0a4c"
 
 [[package]]
 name = "flowmap"
