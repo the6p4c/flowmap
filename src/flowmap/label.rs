@@ -80,6 +80,9 @@ fn label_node<Ni: 'static + NodeIndex + std::fmt::Debug>(
 
     let mut source = vec![];
     let mut sink = vec![];
+    // Every node which is an input to the node we're labelling now is connected
+    // to the sink, since the sink replaces the node we're labelling.
+    sink.extend_from_slice(network.ancestors(node));
 
     let mut visited = vec![];
     let mut s = vec![node];
@@ -254,8 +257,41 @@ mod tests {
         assert_equiv!(&network.node_value(7).x_bar, [7]);
         assert_equiv!(&network.node_value(8).x_bar, [5, 6, 8]);
         assert_equiv!(&network.node_value(9).x_bar, [9]);
-        assert_equiv!(&network.node_value(10).x_bar, [9, 10]);
+        assert_equiv!(&network.node_value(10).x_bar, [8, 9, 10]);
         assert_equiv!(&network.node_value(11).x_bar, [8, 9, 10, 11]);
         assert_equiv!(&network.node_value(12).x_bar, [8, 9, 10, 11, 12]);
+    }
+
+    #[test]
+    fn label_uncollapsed_nodes_feed_sink() {
+        // The following network contains a node, 4, which has an input from a
+        // node, 2, which is not collapsed during the labelling process. As
+        // such, the edge from 2 to 4 should become an edge from 2 to the sink
+        // for the flow, however, if the only edges into the sink are those
+        // which were inputs to collapsed nodes, the edge is not accounted for.
+        // Thus, the value of the maximum flow is less than it should be -
+        // causing the cut to be induced incorrectly and a LUT with more inputs
+        // than K to be generated.
+        //
+        // 0   1    2
+        // |   v    v
+        // \-> 3 -> 4
+        let mut network = FlowMapBooleanNetwork::new(4);
+        network.add_edge(From(0), To(3));
+        network.add_edge(From(1), To(3));
+        network.add_edge(From(2), To(4));
+        network.add_edge(From(3), To(4));
+
+        // Mark PI nodes and give label of 0
+        for pi in &[0, 1, 2] {
+            let node_value = network.node_value_mut(*pi);
+            node_value.label = Some(0);
+            node_value.is_pi = true;
+        }
+
+        label_network(&mut network, 2);
+
+        assert_eq!(network.node_value(3).label, Some(1));
+        assert_eq!(network.node_value(4).label, Some(2));
     }
 }
