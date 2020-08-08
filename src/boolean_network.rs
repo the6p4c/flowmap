@@ -206,30 +206,7 @@ pub trait NodeIndex: PartialEq + Copy + Clone {
 #[cfg(test)]
 mod tests {
     use super::*;
-
-    macro_rules! assert_equiv {
-        ($left:expr, $right:expr) => {
-            let left = $left;
-            let right = $right;
-
-            assert!(
-                left.len() == right.len(),
-                "left length ({}) did not match right length ({})",
-                left.len(),
-                right.len()
-            );
-
-            for v in left {
-                assert!(
-                    right.contains(&v),
-                    "element {:?} from left not in right (left = {:?}, right = {:?})",
-                    v,
-                    left,
-                    right
-                );
-            }
-        };
-    }
+    use crate::assert_equiv;
 
     impl NodeIndex for usize {
         fn from_node_index(ni: usize) -> usize {
