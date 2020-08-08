@@ -122,7 +122,7 @@ fn label_node<Ni: 'static + NodeIndex + std::fmt::Debug>(
 
     let mut flow = Flow::new(&mut network, node, &source, &sink);
     let mut max_flow = 0;
-    while flow.step() {
+    while max_flow < k + 1 && flow.step() {
         max_flow += 1;
     }
 
