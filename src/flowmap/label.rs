@@ -1,5 +1,5 @@
-use super::*;
 use super::flow::*;
+use super::*;
 
 /// Provides a topological ordering on a boolean network.
 struct TopologicalOrder<Ni: NodeIndex> {
@@ -7,30 +7,25 @@ struct TopologicalOrder<Ni: NodeIndex> {
     visited: Vec<Ni>,
 }
 
-impl<Ni: 'static + NodeIndex> TopologicalOrder<Ni> {
+impl<Ni: NodeIndex> TopologicalOrder<Ni> {
     /// Creates a new topological ordering over the provided network.
-    fn new<N: Default, E: Default, Ie: IncomingEdges<Ni, E>>(
-        network: &BooleanNetwork<N, E, Ni, Ie>,
-    ) -> TopologicalOrder<Ni> {
-        let s = network
-            .nodes()
-            .filter(|ni| network.ancestors(*ni).count() == 0)
+    fn new<N: Default, E: Default>(network: &BooleanNetwork<N, E, Ni>) -> TopologicalOrder<Ni> {
+        let s = (0..network.node_count())
+            .map(Ni::from_node_index)
+            .filter(|ni| network.ancestors(*ni).len() == 0)
             .collect();
 
         TopologicalOrder {
             s,
             // We'll eventually completely fill our visited list with every node
             // on the graph, so make space now
-            visited: Vec::with_capacity(network.nodes().count()),
+            visited: Vec::with_capacity(network.node_count()),
         }
     }
 
     /// Returns the next node in the topological ordering, or `None` of no nodes
     /// remain.
-    fn next<N: Default, E: Default, Ie: IncomingEdges<Ni, E>>(
-        &mut self,
-        network: &BooleanNetwork<N, E, Ni, Ie>,
-    ) -> Option<Ni> {
+    fn next<N: Default, E: Default>(&mut self, network: &BooleanNetwork<N, E, Ni>) -> Option<Ni> {
         let n = self.s.pop();
 
         if let Some(n) = n {
@@ -38,11 +33,12 @@ impl<Ni: 'static + NodeIndex> TopologicalOrder<Ni> {
 
             for descendent in network.descendents(n) {
                 let remaining_ancestors = network
-                    .ancestors(descendent)
+                    .ancestors(*descendent)
+                    .iter()
                     .filter(|ni| !self.visited.contains(ni));
 
                 if remaining_ancestors.count() == 0 {
-                    self.s.push(descendent);
+                    self.s.push(*descendent);
                 }
             }
         }
@@ -51,25 +47,24 @@ impl<Ni: 'static + NodeIndex> TopologicalOrder<Ni> {
     }
 }
 
-
 /// Returns the label for a single node of the network.
-fn label_node<'a, 'b, Ni: 'static + NodeIndex + std::fmt::Debug, Ie: IncomingEdges<Ni, (u32, u32)>>(
-    mut network: &'b mut FlowMapBooleanNetwork<'a, Ni, Ie>,
+fn label_node<Ni: 'static + NodeIndex + std::fmt::Debug>(
+    mut network: &mut FlowMapBooleanNetwork<Ni>,
     node: Ni,
     k: u32,
 ) -> (u32, Vec<Ni>) {
+    dbg!(node);
     let p = network
         .ancestors(node)
+        .iter()
         .map(|node| {
             network
-                .node_value(node)
+                .node_value(*node)
                 .label
                 .expect("ancestor to be labelled")
         })
         .max()
         .expect("node being labelled to have ancestors");
-
-    dbg!(node);
 
     if p == 0 {
         // Our network of ancestors is entirely PIs, and thus after collapsing
@@ -89,7 +84,8 @@ fn label_node<'a, 'b, Ni: 'static + NodeIndex + std::fmt::Debug, Ie: IncomingEdg
     let mut visited = vec![];
     let mut s = vec![node];
     while let Some(node) = s.pop() {
-        let ancestors = network.ancestors(node);
+        let mut ancestors = vec![];
+        ancestors.extend_from_slice(network.ancestors(node));
         network.node_value_mut(node).flow = 0;
 
         for ancestor in ancestors {
@@ -104,9 +100,9 @@ fn label_node<'a, 'b, Ni: 'static + NodeIndex + std::fmt::Debug, Ie: IncomingEdg
                 if label == Some(p) {
                     // This node needs to be collapsed
                     for ancestor2 in network.ancestors(ancestor) {
-                        println!("adding sink {:?}", ancestor2);
-                        if !sink.contains(&ancestor2) {
-                            sink.push(ancestor2);
+                        println!("adding sink {:?}", *ancestor2);
+                        if !sink.contains(ancestor2) {
+                            sink.push(*ancestor2);
                         }
                     }
                 } else if is_pi {
@@ -142,8 +138,8 @@ fn label_node<'a, 'b, Ni: 'static + NodeIndex + std::fmt::Debug, Ie: IncomingEdg
 }
 
 /// Perform the FlowMap labelling pass on the entire network.
-fn label_network<'a, 'b, Ni: 'static + NodeIndex + std::fmt::Debug, Ie: IncomingEdges<Ni, (u32, u32)>>(
-    mut network: &'b mut FlowMapBooleanNetwork<'a, Ni, Ie>,
+pub fn label_network<Ni: 'static + NodeIndex + std::fmt::Debug>(
+    mut network: &mut FlowMapBooleanNetwork<Ni>,
     k: u32,
 ) {
     let mut topo = TopologicalOrder::new(&network);
@@ -168,7 +164,7 @@ mod tests {
     #[test]
     fn topological_order() {
         // Graph has a unique topological order
-        let mut network = BooleanNetwork::<(), (), usize, Bounded2<_, _>>::new(7);
+        let mut network = BooleanNetwork::<(), (), usize>::new(7);
         network.add_edge(From(0), To(1));
         network.add_edge(From(0), To(2));
         network.add_edge(From(1), To(2));
@@ -196,7 +192,7 @@ mod tests {
     #[test]
     fn label() {
         // Fig. 5(a) from FlowMap paper, numbered top-to-bottom, left-to-right.
-        let mut network = BooleanNetwork::<NodeValue<usize>, (u32, u32), usize, Bounded2<_, _>>::new(12);
+        let mut network = FlowMapBooleanNetwork::<usize>::new(12);
 
         network.add_edge(From(0), To(5));
         network.add_edge(From(1), To(5));
@@ -252,13 +248,69 @@ mod tests {
         assert_eq!(network.node_value(12).label, Some(2));
 
         // Other nodes should have the correct \bar{X} sets
-        assert_eq!({ let mut v = network.node_value(5).x_bar.clone(); v.sort(); v }, vec![5]);
-        assert_eq!({ let mut v = network.node_value(6).x_bar.clone(); v.sort(); v }, vec![6]);
-        assert_eq!({ let mut v = network.node_value(7).x_bar.clone(); v.sort(); v }, vec![7]);
-        assert_eq!({ let mut v = network.node_value(8).x_bar.clone(); v.sort(); v }, vec![5, 6, 8]);
-        assert_eq!({ let mut v = network.node_value(9).x_bar.clone(); v.sort(); v }, vec![9]);
-        assert_eq!({ let mut v = network.node_value(10).x_bar.clone(); v.sort(); v }, vec![9, 10]);
-        assert_eq!({ let mut v = network.node_value(11).x_bar.clone(); v.sort(); v }, vec![8, 9, 10, 11]);
-        assert_eq!({ let mut v = network.node_value(12).x_bar.clone(); v.sort(); v }, vec![8, 9, 10, 11, 12]);
+        assert_eq!(
+            {
+                let mut v = network.node_value(5).x_bar.clone();
+                v.sort();
+                v
+            },
+            vec![5]
+        );
+        assert_eq!(
+            {
+                let mut v = network.node_value(6).x_bar.clone();
+                v.sort();
+                v
+            },
+            vec![6]
+        );
+        assert_eq!(
+            {
+                let mut v = network.node_value(7).x_bar.clone();
+                v.sort();
+                v
+            },
+            vec![7]
+        );
+        assert_eq!(
+            {
+                let mut v = network.node_value(8).x_bar.clone();
+                v.sort();
+                v
+            },
+            vec![5, 6, 8]
+        );
+        assert_eq!(
+            {
+                let mut v = network.node_value(9).x_bar.clone();
+                v.sort();
+                v
+            },
+            vec![9]
+        );
+        assert_eq!(
+            {
+                let mut v = network.node_value(10).x_bar.clone();
+                v.sort();
+                v
+            },
+            vec![9, 10]
+        );
+        assert_eq!(
+            {
+                let mut v = network.node_value(11).x_bar.clone();
+                v.sort();
+                v
+            },
+            vec![8, 9, 10, 11]
+        );
+        assert_eq!(
+            {
+                let mut v = network.node_value(12).x_bar.clone();
+                v.sort();
+                v
+            },
+            vec![8, 9, 10, 11, 12]
+        );
     }
 }

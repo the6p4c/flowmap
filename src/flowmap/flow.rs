@@ -10,20 +10,20 @@ enum Position<Ni: NodeIndex> {
     AfterNode(Ni),
 }
 
-pub struct Flow<'a, 'b, Ni: 'static + NodeIndex + std::fmt::Debug, Ie: IncomingEdges<Ni, (u32, u32)>> {
-    network: &'b mut FlowMapBooleanNetwork<'a, Ni, Ie>,
+pub struct Flow<'a, Ni: 'static + NodeIndex + std::fmt::Debug> {
+    network: &'a mut FlowMapBooleanNetwork<Ni>,
     node: Ni,
     source: Vec<(Ni, u32)>,
     sink: Vec<(Ni, u32)>,
 }
 
-impl<Ni: 'static + NodeIndex + std::fmt::Debug, Ie: IncomingEdges<Ni, (u32, u32)>> Flow<'_, '_, Ni, Ie> {
-    pub fn new<'a, 'b>(
-        network: &'b mut FlowMapBooleanNetwork<'a, Ni, Ie>,
+impl<Ni: NodeIndex + std::fmt::Debug> Flow<'_, Ni> {
+    pub fn new<'a>(
+        network: &'a mut FlowMapBooleanNetwork<Ni>,
         node: Ni,
         source: &[Ni],
         sink: &[Ni],
-    ) -> Flow<'a, 'b, Ni, Ie> {
+    ) -> Flow<'a, Ni> {
         Flow {
             network,
             node,
@@ -85,7 +85,7 @@ impl<Ni: 'static + NodeIndex + std::fmt::Debug, Ie: IncomingEdges<Ni, (u32, u32)
 
                 true
             }
-            None => false
+            None => false,
         }
     }
 
@@ -98,7 +98,7 @@ impl<Ni: 'static + NodeIndex + std::fmt::Debug, Ie: IncomingEdges<Ni, (u32, u32)
                 visited.push(n);
 
                 match n {
-                    Position::Source => {},
+                    Position::Source => {}
                     Position::BeforeNode(n) => reachable.push(n),
                     Position::AfterNode(n) => reachable.push(n),
                     Position::Sink => continue,
@@ -121,23 +121,28 @@ impl<Ni: 'static + NodeIndex + std::fmt::Debug, Ie: IncomingEdges<Ni, (u32, u32)
         dbg!(&reachable);
         dbg!(&orig);
 
-        orig.iter().copied().filter(|ni| !reachable.contains(ni)).collect()
+        orig.iter()
+            .copied()
+            .filter(|ni| !reachable.contains(ni))
+            .collect()
     }
 
     fn descendents(&self, position: Position<Ni>) -> Box<dyn Iterator<Item = Position<Ni>> + '_> {
         match position {
-            Position::Source => Box::new(self.source.iter().map(|(ni, _)| Position::BeforeNode(*ni))),
+            Position::Source => {
+                Box::new(self.source.iter().map(|(ni, _)| Position::BeforeNode(*ni)))
+            }
             Position::Sink => Box::new(iter::empty()),
             Position::BeforeNode(ni) => Box::new(iter::once(Position::AfterNode(ni))),
             Position::AfterNode(ni) => {
                 if self.sink.iter().any(|(ni2, _)| *ni2 == ni) {
                     Box::new(iter::once(Position::Sink))
                 } else {
-                    Box::new(self.network.descendents(ni).map(move |ni| {
-                        if ni == self.node {
+                    Box::new(self.network.descendents(ni).iter().map(move |ni| {
+                        if *ni == self.node {
                             Position::Sink
                         } else {
-                            Position::BeforeNode(ni)
+                            Position::BeforeNode(*ni)
                         }
                     }))
                 }
@@ -149,7 +154,12 @@ impl<Ni: 'static + NodeIndex + std::fmt::Debug, Ie: IncomingEdges<Ni, (u32, u32)
         match position {
             Position::Source => Box::new(iter::empty()),
             Position::Sink => Box::new(self.sink.iter().map(|(ni, _)| Position::AfterNode(*ni))),
-            Position::BeforeNode(ni) => Box::new(self.network.ancestors(ni).map(Position::AfterNode)),
+            Position::BeforeNode(ni) => Box::new(
+                self.network
+                    .ancestors(ni)
+                    .iter()
+                    .map(|ni| Position::AfterNode(*ni)),
+            ),
             Position::AfterNode(ni) => Box::new(iter::once(Position::BeforeNode(ni))),
         }
     }
@@ -247,22 +257,22 @@ impl<Ni: 'static + NodeIndex + std::fmt::Debug, Ie: IncomingEdges<Ni, (u32, u32)
 
         dbg!(from, to, flow, cap, is_undir_path_fwd, is_undir_path_bkw);
 
-        let x = if swap {
-            (to, from)
-        } else {
-            (from, to)
-        };
+        let x = if swap { (to, from) } else { (from, to) };
 
         match x {
             (Position::Source, Position::BeforeNode(_)) => is_undir_path_fwd,
             (Position::BeforeNode(ni), Position::Source) => is_undir_path_bkw,
-            (Position::AfterNode(ni1), Position::BeforeNode(ni2)) if ni1 == ni2 => is_undir_path_bkw,
-            (Position::BeforeNode(ni1), Position::AfterNode(ni2)) if ni1 == ni2 => is_undir_path_fwd,
+            (Position::AfterNode(ni1), Position::BeforeNode(ni2)) if ni1 == ni2 => {
+                is_undir_path_bkw
+            }
+            (Position::BeforeNode(ni1), Position::AfterNode(ni2)) if ni1 == ni2 => {
+                is_undir_path_fwd
+            }
             (Position::AfterNode(ni1), Position::BeforeNode(ni2)) => is_undir_path_fwd,
             (Position::BeforeNode(ni1), Position::AfterNode(ni2)) => is_undir_path_bkw,
             (Position::AfterNode(ni), Position::Sink) => is_undir_path_fwd,
             (Position::Sink, Position::AfterNode(ni)) => is_undir_path_bkw,
-            _ => false
+            _ => false,
         }
     }
 }

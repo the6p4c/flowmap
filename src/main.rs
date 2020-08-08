@@ -6,6 +6,7 @@ mod flowmap;
 
 use aiger::*;
 use boolean_network::*;
+use flowmap::*;
 
 impl NodeIndex for Literal {
     fn from_node_index(ni: usize) -> Literal {
@@ -17,14 +18,14 @@ impl NodeIndex for Literal {
     }
 }
 
-#[derive(Default)]
-struct NodeValue {
-    is_pi: bool,
-    is_po: bool,
-    label: Option<u32>,
-}
-
-type AIG<'a> = BooleanNetwork<'a, NodeValue, (), Literal, Bounded2<Literal, ()>>;
+//#[derive(Default)]
+//struct NodeValue {
+//    is_pi: bool,
+//    is_po: bool,
+//    label: Option<u32>,
+//}
+//
+//type AIG<'a> = BooleanNetwork<'a, NodeValue, (), Literal, Bounded2<Literal, ()>>;
 
 fn main() {
     let args = env::args().collect::<Vec<_>>();
@@ -38,7 +39,7 @@ fn main() {
 
     let max_variable = aiger_header.m;
     let max_literal = aiger_header.m * 2 + 1;
-    let mut network = AIG::new(Literal(max_literal));
+    let mut network = FlowMapBooleanNetwork::new(Literal(max_literal));
 
     // Add implied inverters to graph
     for variable in 0..=max_variable {
@@ -47,9 +48,13 @@ fn main() {
         network.add_edge(From(from), To(to));
     }
 
+    network.node_value_mut(Literal(0)).label = Some(0);
+    network.node_value_mut(Literal(0)).is_pi = true;
+
     for aiger_record in aiger_reader.records() {
         match aiger_record.unwrap() {
             Aiger::Input(l) => {
+                network.node_value_mut(l).label = Some(0);
                 network.node_value_mut(l).is_pi = true;
             }
             Aiger::Latch { output, input } => {
@@ -71,23 +76,30 @@ fn main() {
         }
     }
 
-    println!("digraph {{");
-    for l in 0..=max_literal {
-        let l = Literal(l);
-        let node_value = network.node_value(l);
+    flowmap::label::label_network(&mut network, 4);
+    let luts = flowmap::map::map(&mut network);
 
-        println!(
-            "l{} [label=\"literal {0} (variable {}{}){}{}\"];",
-            l.0,
-            if l.is_inverted() { "~" } else { "" },
-            l.variable(),
-            if node_value.is_pi { " PI" } else { "" },
-            if node_value.is_po { " PO" } else { "" },
-        );
-
-        for ancestor in network.ancestors(l) {
-            println!("l{} -> l{};", ancestor.0, l.0);
-        }
+    for (output, inputs) in luts {
+        println!("{:?} <= {:?}", output, inputs);
     }
-    println!("}}");
+
+    //println!("digraph {{");
+    //for l in 0..=max_literal {
+    //    let l = Literal(l);
+    //    let node_value = network.node_value(l);
+    //
+    //    println!(
+    //        "l{} [label=\"literal {0} (variable {}{}){}{}\"];",
+    //        l.0,
+    //        if l.is_inverted() { "~" } else { "" },
+    //        l.variable(),
+    //        if node_value.is_pi { " PI" } else { "" },
+    //        if node_value.is_po { " PO" } else { "" },
+    //    );
+    //
+    //    for ancestor in network.ancestors(l) {
+    //        println!("l{} -> l{};", ancestor.0, l.0);
+    //    }
+    //}
+    //println!("}}");
 }
