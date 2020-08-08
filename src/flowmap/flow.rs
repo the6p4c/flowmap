@@ -37,7 +37,7 @@ impl<Ni: NodeIndex + std::fmt::Debug> Flow<'_, Ni> {
         let mut visited = HashSet::new();
         let mut path = None;
         let mut s = vec![(Position::Source, vec![])];
-        'outer: while let Some((p, ipath)) = s.pop() {
+        while let Some((p, ipath)) = s.pop() {
             if visited.contains(&p) {
                 continue;
             }
@@ -257,17 +257,17 @@ impl<Ni: NodeIndex + std::fmt::Debug> Flow<'_, Ni> {
 
         match x {
             (Position::Source, Position::BeforeNode(_)) => is_undir_path_fwd,
-            (Position::BeforeNode(ni), Position::Source) => is_undir_path_bkw,
+            (Position::BeforeNode(_), Position::Source) => is_undir_path_bkw,
             (Position::AfterNode(ni1), Position::BeforeNode(ni2)) if ni1 == ni2 => {
                 is_undir_path_bkw
             }
             (Position::BeforeNode(ni1), Position::AfterNode(ni2)) if ni1 == ni2 => {
                 is_undir_path_fwd
             }
-            (Position::AfterNode(ni1), Position::BeforeNode(ni2)) => is_undir_path_fwd,
-            (Position::BeforeNode(ni1), Position::AfterNode(ni2)) => is_undir_path_bkw,
-            (Position::AfterNode(ni), Position::Sink) => is_undir_path_fwd,
-            (Position::Sink, Position::AfterNode(ni)) => is_undir_path_bkw,
+            (Position::AfterNode(_), Position::BeforeNode(_)) => is_undir_path_fwd,
+            (Position::BeforeNode(_), Position::AfterNode(_)) => is_undir_path_bkw,
+            (Position::AfterNode(_), Position::Sink) => is_undir_path_fwd,
+            (Position::Sink, Position::AfterNode(_)) => is_undir_path_bkw,
             _ => false,
         }
     }

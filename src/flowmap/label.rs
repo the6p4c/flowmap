@@ -13,7 +13,7 @@ impl<Ni: NodeIndex> TopologicalOrder<Ni> {
     fn new<N: Default, E: Default>(network: &BooleanNetwork<N, E, Ni>) -> TopologicalOrder<Ni> {
         let s = (0..network.node_count())
             .map(Ni::from_node_index)
-            .filter(|ni| network.ancestors(*ni).len() == 0)
+            .filter(|ni| network.ancestors(*ni).is_empty())
             .collect();
 
         TopologicalOrder {
@@ -74,7 +74,6 @@ fn label_node<Ni: 'static + NodeIndex + std::fmt::Debug>(
         // the label of the node we're evaluating is p + 1.
         // This also gives us an \bar{X} which only contains the node we're
         // evaluating.
-        // TODO: Also return \bar{X}.
         return (p + 1, vec![node]);
     }
 

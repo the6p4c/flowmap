@@ -1,4 +1,3 @@
-use super::flow::*;
 use super::*;
 
 fn inputs<Ni: 'static + NodeIndex + std::fmt::Debug>(

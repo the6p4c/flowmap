@@ -18,15 +18,6 @@ impl NodeIndex for Literal {
     }
 }
 
-//#[derive(Default)]
-//struct NodeValue {
-//    is_pi: bool,
-//    is_po: bool,
-//    label: Option<u32>,
-//}
-//
-//type AIG<'a> = BooleanNetwork<'a, NodeValue, (), Literal, Bounded2<Literal, ()>>;
-
 fn main() {
     let args = env::args().collect::<Vec<_>>();
     let aiger_path = args
@@ -78,7 +69,7 @@ fn main() {
 
     const K: u32 = 6;
     flowmap::label::label_network(&mut network, K);
-    let luts = flowmap::map::map(&mut network, K);
+    let luts = flowmap::map::map(&network, K);
 
     for (output, inputs) in luts {
         println!("{:?} <= {:?}", output, inputs);
