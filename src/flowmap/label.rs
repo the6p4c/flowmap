@@ -160,6 +160,7 @@ pub fn label_network<Ni: 'static + NodeIndex + std::fmt::Debug>(
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::assert_equiv;
 
     #[test]
     fn topological_order() {
@@ -248,69 +249,13 @@ mod tests {
         assert_eq!(network.node_value(12).label, Some(2));
 
         // Other nodes should have the correct \bar{X} sets
-        assert_eq!(
-            {
-                let mut v = network.node_value(5).x_bar.clone();
-                v.sort();
-                v
-            },
-            vec![5]
-        );
-        assert_eq!(
-            {
-                let mut v = network.node_value(6).x_bar.clone();
-                v.sort();
-                v
-            },
-            vec![6]
-        );
-        assert_eq!(
-            {
-                let mut v = network.node_value(7).x_bar.clone();
-                v.sort();
-                v
-            },
-            vec![7]
-        );
-        assert_eq!(
-            {
-                let mut v = network.node_value(8).x_bar.clone();
-                v.sort();
-                v
-            },
-            vec![5, 6, 8]
-        );
-        assert_eq!(
-            {
-                let mut v = network.node_value(9).x_bar.clone();
-                v.sort();
-                v
-            },
-            vec![9]
-        );
-        assert_eq!(
-            {
-                let mut v = network.node_value(10).x_bar.clone();
-                v.sort();
-                v
-            },
-            vec![9, 10]
-        );
-        assert_eq!(
-            {
-                let mut v = network.node_value(11).x_bar.clone();
-                v.sort();
-                v
-            },
-            vec![8, 9, 10, 11]
-        );
-        assert_eq!(
-            {
-                let mut v = network.node_value(12).x_bar.clone();
-                v.sort();
-                v
-            },
-            vec![8, 9, 10, 11, 12]
-        );
+        assert_equiv!(&network.node_value(5).x_bar, [5]);
+        assert_equiv!(&network.node_value(6).x_bar, [6]);
+        assert_equiv!(&network.node_value(7).x_bar, [7]);
+        assert_equiv!(&network.node_value(8).x_bar, [5, 6, 8]);
+        assert_equiv!(&network.node_value(9).x_bar, [9]);
+        assert_equiv!(&network.node_value(10).x_bar, [9, 10]);
+        assert_equiv!(&network.node_value(11).x_bar, [8, 9, 10, 11]);
+        assert_equiv!(&network.node_value(12).x_bar, [8, 9, 10, 11, 12]);
     }
 }
