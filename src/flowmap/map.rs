@@ -1,5 +1,14 @@
 use super::*;
 
+pub struct LUT<Ni: NodeIndex> {
+    /// The node that the LUT generates.
+    pub output: Ni,
+    /// The nodes which serve as inputs to the LUT.
+    pub inputs: Vec<Ni>,
+    /// The nodes which the LUT replaces.
+    pub contains: Vec<Ni>,
+}
+
 fn inputs<Ni: 'static + NodeIndex + std::fmt::Debug>(
     network: &FlowMapBooleanNetwork<Ni>,
     x_bar: &[Ni],
@@ -20,7 +29,7 @@ fn inputs<Ni: 'static + NodeIndex + std::fmt::Debug>(
 pub fn map<Ni: 'static + NodeIndex + std::fmt::Debug>(
     network: &FlowMapBooleanNetwork<Ni>,
     k: u32,
-) -> Vec<(Ni, Vec<Ni>)> {
+) -> Vec<LUT<Ni>> {
     let mut done = vec![];
     let mut luts = vec![];
 
@@ -40,7 +49,11 @@ pub fn map<Ni: 'static + NodeIndex + std::fmt::Debug>(
 
         let inputs = inputs(&network, &node_value.x_bar);
         done.push(n);
-        luts.push((n, inputs.clone()));
+        luts.push(LUT {
+            output: n,
+            inputs: inputs.clone(),
+            contains: node_value.x_bar.clone(),
+        });
 
         let num_inputs = inputs.len();
         assert!(

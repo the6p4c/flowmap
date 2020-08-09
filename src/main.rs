@@ -1,6 +1,7 @@
 use std::env;
 
 mod boolean_network;
+mod evaluate;
 mod flowmap;
 mod test_utils;
 
@@ -71,7 +72,36 @@ fn main() {
     flowmap::label::label_network(&mut network, K);
     let luts = flowmap::map::map(&network, K);
 
-    for (output, inputs) in luts {
-        println!("{:?} <= {:?}", output, inputs);
+    for lut in luts {
+        println!("{:?} <= {:?}", lut.output, lut.inputs);
+        let input_literals = lut
+            .inputs
+            .iter()
+            .map(|l| format!("{}", l.0))
+            .collect::<Vec<_>>();
+        let max_len = input_literals.iter().map(|s| s.len()).max().unwrap();
+        let input_literals = lut
+            .inputs
+            .iter()
+            .map(|l| format!("{:>1$}", l.0, max_len))
+            .collect::<Vec<_>>();
+        let header = format!("    {} | {}", input_literals.join(" "), lut.output.0);
+        println!("{}", header);
+        println!("    {:=>1$}", "", header.len() - 4);
+
+        let f = evaluate::evaluate(&network, &lut);
+        for i in 0..(1 << lut.inputs.len()) {
+            print!("    ");
+
+            let stim = (0..lut.inputs.len())
+                .map(|j| i & (1 << j) != 0)
+                .collect::<Vec<_>>();
+            for s in &stim {
+                print!("{:>1$} ", *s as u8, max_len);
+            }
+
+            let o = f(&stim);
+            println!("| {}", o as u8);
+        }
     }
 }
