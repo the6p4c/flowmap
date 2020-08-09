@@ -93,7 +93,7 @@ fn label_node<Ni: 'static + NodeIndex + std::fmt::Debug>(
 
         for ancestor in ancestors {
             *network.edge_value_mut(From(ancestor), To(node)) = (0, 1);
-            if !visited.contains(&ancestor) {
+            if visited.insert(ancestor) {
                 let (label, is_pi) = {
                     let node_value = network.node_value(ancestor);
 
@@ -115,7 +115,6 @@ fn label_node<Ni: 'static + NodeIndex + std::fmt::Debug>(
                     *network.edge_value_mut(From(ancestor), To(node)) = (0, 1000);
                 }
 
-                visited.insert(ancestor);
                 s.push(ancestor);
             }
         }

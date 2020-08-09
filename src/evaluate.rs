@@ -66,11 +66,9 @@ pub fn evaluate<'a>(
     let mut visited = HashSet::new();
     let mut s = vec![*output];
     while let Some(n) = s.pop() {
-        if visited.contains(&n) {
+        if !visited.insert(n) {
             continue;
         }
-
-        visited.insert(n);
 
         if !inputs.contains(&n) {
             let ancestors = network.ancestors(n);

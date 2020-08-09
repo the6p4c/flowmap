@@ -1,4 +1,5 @@
 use super::*;
+use std::collections::HashSet;
 
 pub struct LUT<Ni: NodeIndex> {
     /// The node that the LUT generates.
@@ -30,7 +31,7 @@ pub fn map<Ni: 'static + NodeIndex + std::fmt::Debug>(
     network: &FlowMapBooleanNetwork<Ni>,
     k: u32,
 ) -> Vec<LUT<Ni>> {
-    let mut done = vec![];
+    let mut done = HashSet::new();
     let mut luts = vec![];
 
     let mut s = (0..network.node_count())
@@ -38,7 +39,7 @@ pub fn map<Ni: 'static + NodeIndex + std::fmt::Debug>(
         .filter(|ni| network.node_value(*ni).is_po)
         .collect::<Vec<_>>();
     while let Some(n) = s.pop() {
-        if done.contains(&n) {
+        if !done.insert(n) {
             continue;
         }
 
@@ -48,7 +49,6 @@ pub fn map<Ni: 'static + NodeIndex + std::fmt::Debug>(
         }
 
         let inputs = inputs(&network, &node_value.x_bar);
-        done.push(n);
         luts.push(LUT {
             output: n,
             inputs: inputs.clone(),

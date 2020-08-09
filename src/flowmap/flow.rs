@@ -38,11 +38,9 @@ impl<Ni: NodeIndex + std::fmt::Debug> Flow<'_, Ni> {
         let mut path = None;
         let mut s = vec![(Position::Source, vec![])];
         while let Some((p, ipath)) = s.pop() {
-            if visited.contains(&p) {
+            if !visited.insert(p) {
                 continue;
             }
-
-            visited.insert(p);
 
             if p == Position::Sink {
                 path = Some(ipath);
@@ -93,9 +91,7 @@ impl<Ni: NodeIndex + std::fmt::Debug> Flow<'_, Ni> {
         let mut visited = HashSet::new();
         let mut s = vec![Position::Source];
         while let Some(n) = s.pop() {
-            if !visited.contains(&n) {
-                visited.insert(n);
-
+            if visited.insert(n) {
                 match n {
                     Position::Source => {}
                     Position::BeforeNode(n) => {
