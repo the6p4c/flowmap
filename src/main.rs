@@ -65,6 +65,7 @@ fn main() {
                 network.add_edge(From(input0), To(output));
                 network.add_edge(From(input1), To(output));
             }
+            Aiger::Symbol { .. } => {}
         }
     }
 
