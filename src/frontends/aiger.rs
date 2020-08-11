@@ -1,10 +1,67 @@
-//! Evaluation of LUTs defined on a boolean network
-
+use aiger::*;
 use crate::boolean_network::*;
-use crate::flowmap::map::LUT;
 use crate::flowmap::*;
-use aiger::Literal;
+use crate::flowmap::map::LUT;
 use std::collections::HashSet;
+use std::io;
+
+impl NodeIndex for Literal {
+    fn from_node_index(ni: usize) -> Literal {
+        Literal(ni)
+    }
+
+    fn node_index(&self) -> usize {
+        self.0
+    }
+}
+
+pub type AIG = FlowMapBooleanNetwork<Literal>;
+
+pub fn from_reader<T: io::Read>(reader: Reader<T>) -> AIG {
+    let header = reader.header();
+
+    let max_variable = header.m;
+    let max_literal = header.m * 2 + 1;
+    let mut network = FlowMapBooleanNetwork::new(Literal(max_literal));
+
+    // Add implied inverters to graph
+    for variable in 0..=max_variable {
+        let from = Literal::from_variable(variable, false);
+        let to = Literal::from_variable(variable, true);
+        network.add_edge(From(from), To(to));
+    }
+
+    network.node_value_mut(Literal(0)).label = Some(0);
+    network.node_value_mut(Literal(0)).is_pi = true;
+
+    for record in reader.records() {
+        match record.unwrap() {
+            Aiger::Input(l) => {
+                network.node_value_mut(l).label = Some(0);
+                network.node_value_mut(l).is_pi = true;
+            }
+            Aiger::Latch { output, input } => {
+                network.node_value_mut(output).is_pi = true;
+                network.node_value_mut(output).is_po = true;
+
+                network.add_edge(From(input), To(output));
+            }
+            Aiger::Output(l) => {
+                network.node_value_mut(l).is_po = true;
+            }
+            Aiger::AndGate {
+                output,
+                inputs: [input0, input1],
+            } => {
+                network.add_edge(From(input0), To(output));
+                network.add_edge(From(input1), To(output));
+            }
+            Aiger::Symbol { .. } => {}
+        }
+    }
+
+    network
+}
 
 /// The internal logic of the LUT, encoded as a recursive structure.
 #[derive(Debug, PartialEq, Clone)]
@@ -49,7 +106,7 @@ impl LogicNode {
 ///
 /// The inputs to the LUT must be passed to the function returned in the same
 /// order as the input literals in `lut.inputs`.
-pub fn evaluate<'a>(
+pub fn evaluate_lut<'a>(
     network: &FlowMapBooleanNetwork<Literal>,
     lut: &'a LUT<Literal>,
 ) -> impl Fn(&[bool]) -> bool + 'a {
@@ -255,7 +312,7 @@ mod tests {
     }
 
     #[test]
-    fn evaluate_single_inverter() {
+    fn evaluate_lut_single_inverter() {
         // --2-->|~|>--3--
         let mut network = FlowMapBooleanNetwork::new(Literal(3));
         network.add_edge(From(Literal(2)), To(Literal(3)));
@@ -265,14 +322,14 @@ mod tests {
             contains: vec![Literal(3)],
             inputs: vec![Literal(2)],
         };
-        let f = evaluate(&network, &lut);
+        let f = evaluate_lut(&network, &lut);
 
         assert_eq!(f(&[false]), true);
         assert_eq!(f(&[true]), false);
     }
 
     #[test]
-    fn evaluate_single_and_gate() {
+    fn evaluate_lut_single_and_gate() {
         // --2-->|&|>--6--
         // --4-->| |
         let mut network = FlowMapBooleanNetwork::new(Literal(6));
@@ -284,7 +341,7 @@ mod tests {
             contains: vec![Literal(6)],
             inputs: vec![Literal(2), Literal(4)],
         };
-        let f = evaluate(&network, &lut);
+        let f = evaluate_lut(&network, &lut);
 
         assert_eq!(f(&[false, false]), false);
         assert_eq!(f(&[false, true]), false);
@@ -293,7 +350,7 @@ mod tests {
     }
 
     #[test]
-    fn evaluate_single_and_gate_single_inverted_input() {
+    fn evaluate_lut_single_and_gate_single_inverted_input() {
         // --2-->|~|>--3-->|&|>--6--
         // --4------------>| |
         let mut network = FlowMapBooleanNetwork::new(Literal(6));
@@ -306,7 +363,7 @@ mod tests {
             contains: vec![Literal(3), Literal(6)],
             inputs: vec![Literal(2), Literal(4)],
         };
-        let f = evaluate(&network, &lut);
+        let f = evaluate_lut(&network, &lut);
 
         assert_eq!(f(&[false, false]), false);
         assert_eq!(f(&[false, true]), true);
@@ -315,7 +372,7 @@ mod tests {
     }
 
     #[test]
-    fn evaluate_single_and_gate_single_inverted_input_unused_output() {
+    fn evaluate_lut_single_and_gate_single_inverted_input_unused_output() {
         //        8
         //        ^
         // --2-->|~|>--3-->|&|>--6--
@@ -331,7 +388,7 @@ mod tests {
             contains: vec![Literal(3), Literal(6)],
             inputs: vec![Literal(2), Literal(4)],
         };
-        let f = evaluate(&network, &lut);
+        let f = evaluate_lut(&network, &lut);
 
         assert_eq!(f(&[false, false]), false);
         assert_eq!(f(&[false, true]), true);
@@ -340,7 +397,7 @@ mod tests {
     }
 
     #[test]
-    fn evaluate_and_chain_single_inverted_input() {
+    fn evaluate_lut_and_chain_single_inverted_input() {
         // --2-->|~|--3-->|&|>--10-->| |
         // --4----------->| |        | |
         //                           |&|>--14--
@@ -361,7 +418,7 @@ mod tests {
             inputs: vec![Literal(2), Literal(4), Literal(6), Literal(8)],
         };
 
-        let f = evaluate(&network, &lut);
+        let f = evaluate_lut(&network, &lut);
 
         assert_eq!(f(&[false, false, false, false]), false);
         assert_eq!(f(&[false, false, false, true]), false);
@@ -382,7 +439,7 @@ mod tests {
     }
 
     #[test]
-    fn evaluate_single_or_gate() {
+    fn evaluate_lut_single_or_gate() {
         // --2-->|~|>--3-->|&|>--6-->|~|>--7--
         // --4-->|~|>--5-->| |
         let mut network = FlowMapBooleanNetwork::new(Literal(7));
@@ -397,7 +454,7 @@ mod tests {
             contains: vec![Literal(3), Literal(5), Literal(6)],
             inputs: vec![Literal(2), Literal(4)],
         };
-        let f = evaluate(&network, &lut);
+        let f = evaluate_lut(&network, &lut);
 
         assert_eq!(f(&[false, false]), false);
         assert_eq!(f(&[false, true]), true);
