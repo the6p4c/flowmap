@@ -1,5 +1,6 @@
 use std::env;
 
+mod backends;
 mod boolean_network;
 mod flowmap;
 mod frontends;
@@ -10,6 +11,9 @@ fn main() {
     let aiger_path = args
         .get(1)
         .expect("path to aiger file as first command line argument");
+    let rtlil_path = args
+        .get(2)
+        .expect("path to rtlil file as second command line argument");
 
     let aiger_file = std::fs::File::open(aiger_path).unwrap();
     let aiger_reader = aiger::Reader::from_reader(aiger_file).unwrap();
@@ -19,37 +23,22 @@ fn main() {
     flowmap::label::label_network(&mut network, K);
     let luts = flowmap::map::map(&network, K);
 
-    for lut in luts {
-        let symbol = &network.node_value(lut.output).symbol;
-        println!("{:?} (symbol = {:?}) <= {:?}", lut.output, symbol, lut.inputs);
-        let input_literals = lut
-            .inputs
-            .iter()
-            .map(|l| format!("{}", l.0))
-            .collect::<Vec<_>>();
-        let max_len = input_literals.iter().map(|s| s.len()).max().unwrap();
-        let input_literals = lut
-            .inputs
-            .iter()
-            .map(|l| format!("{:>1$}", l.0, max_len))
-            .collect::<Vec<_>>();
-        let header = format!("    {} | {}", input_literals.join(" "), lut.output.0);
-        println!("{}", header);
-        println!("    {:=>1$}", "", header.len() - 4);
+    let rtlil_file = std::fs::File::create(rtlil_path).unwrap();
+    backends::rtlil::write_rtlil(rtlil_file, &network, &luts, |lut| {
+        let f = frontends::aiger::evaluate_lut(&network, lut);
 
-        let f = frontends::aiger::evaluate_lut(&network, &lut);
-        for i in 0..(1 << lut.inputs.len()) {
-            print!("    ");
+        let num_bits = lut.inputs.len();
+        let max_input = (1 << num_bits) - 1;
+        (0..=max_input)
+            .map(|i| {
+                let bits = (0..num_bits)
+                    .rev()
+                    .map(|bit| i & (1 << bit) != 0)
+                    .collect::<Vec<_>>();
 
-            let stim = (0..lut.inputs.len())
-                .map(|j| i & (1 << j) != 0)
-                .collect::<Vec<_>>();
-            for s in &stim {
-                print!("{:>1$} ", *s as u8, max_len);
-            }
-
-            let o = f(&stim);
-            println!("| {}", o as u8);
-        }
-    }
+                f(&bits)
+            })
+            .collect()
+    })
+    .unwrap();
 }
