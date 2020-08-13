@@ -8,6 +8,7 @@ pub type FlowMapBooleanNetwork<Ni> = BooleanNetwork<NodeValue<Ni>, (u32, u32), N
 
 #[derive(Clone)]
 pub struct NodeValue<Ni> {
+    pub symbol: Option<String>,
     pub label: Option<u32>,
     pub x_bar: Vec<Ni>,
     pub is_pi: bool,
@@ -18,6 +19,7 @@ pub struct NodeValue<Ni> {
 impl<Ni: 'static + NodeIndex> Default for NodeValue<Ni> {
     fn default() -> Self {
         NodeValue {
+            symbol: None,
             label: None,
             x_bar: vec![],
             is_pi: false,

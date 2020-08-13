@@ -20,7 +20,8 @@ fn main() {
     let luts = flowmap::map::map(&network, K);
 
     for lut in luts {
-        println!("{:?} <= {:?}", lut.output, lut.inputs);
+        let symbol = &network.node_value(lut.output).symbol;
+        println!("{:?} (symbol = {:?}) <= {:?}", lut.output, symbol, lut.inputs);
         let input_literals = lut
             .inputs
             .iter()

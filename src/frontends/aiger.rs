@@ -1,7 +1,7 @@
-use aiger::*;
 use crate::boolean_network::*;
-use crate::flowmap::*;
 use crate::flowmap::map::LUT;
+use crate::flowmap::*;
+use aiger::*;
 use std::collections::HashSet;
 use std::io;
 
@@ -34,11 +34,16 @@ pub fn from_reader<T: io::Read>(reader: Reader<T>) -> AIG {
     network.node_value_mut(Literal(0)).label = Some(0);
     network.node_value_mut(Literal(0)).is_pi = true;
 
+    let mut inputs = vec![];
+    let mut outputs = vec![];
+
     for record in reader.records() {
         match record.unwrap() {
             Aiger::Input(l) => {
                 network.node_value_mut(l).label = Some(0);
                 network.node_value_mut(l).is_pi = true;
+
+                inputs.push(l);
             }
             Aiger::Latch { output, input } => {
                 network.node_value_mut(output).is_pi = true;
@@ -48,6 +53,8 @@ pub fn from_reader<T: io::Read>(reader: Reader<T>) -> AIG {
             }
             Aiger::Output(l) => {
                 network.node_value_mut(l).is_po = true;
+
+                outputs.push(l);
             }
             Aiger::AndGate {
                 output,
@@ -56,7 +63,19 @@ pub fn from_reader<T: io::Read>(reader: Reader<T>) -> AIG {
                 network.add_edge(From(input0), To(output));
                 network.add_edge(From(input1), To(output));
             }
-            Aiger::Symbol { .. } => {}
+            Aiger::Symbol {
+                type_spec,
+                position,
+                symbol,
+            } => {
+                let l = match type_spec {
+                    Symbol::Input => inputs[position],
+                    Symbol::Output => outputs[position],
+                    Symbol::Latch => continue,
+                };
+
+                network.node_value_mut(l).symbol = Some(symbol);
+            }
         }
     }
 
