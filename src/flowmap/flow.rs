@@ -1,6 +1,6 @@
 use super::*;
 use crate::boolean_network::*;
-use std::collections::HashSet;
+use std::collections::{HashMap, HashSet};
 use std::iter;
 
 #[derive(Debug, Eq, PartialEq, Copy, Clone, Hash)]
@@ -35,15 +35,14 @@ impl<Ni: NodeIndex + std::fmt::Debug> Flow<'_, Ni> {
 
     pub fn step(&mut self) -> bool {
         let mut visited = HashSet::new();
-        let mut path = None;
-        let mut s = vec![(Position::Source, vec![])];
-        while let Some((p, ipath)) = s.pop() {
+        let mut path = HashMap::new();
+        let mut s = vec![Position::Source];
+        while let Some(p) = s.pop() {
             if !visited.insert(p) {
                 continue;
             }
 
             if p == Position::Sink {
-                path = Some(ipath);
                 break;
             }
 
@@ -54,9 +53,8 @@ impl<Ni: NodeIndex + std::fmt::Debug> Flow<'_, Ni> {
 
                 let (_, cap) = self.flow_cap(p, descendent);
                 if cap > 0 {
-                    let mut new_path = ipath.clone();
-                    new_path.push(p);
-                    s.push((descendent, new_path));
+                    path.insert(descendent, p);
+                    s.push(descendent);
                 }
             }
 
@@ -67,23 +65,32 @@ impl<Ni: NodeIndex + std::fmt::Debug> Flow<'_, Ni> {
 
                 let (flow, _) = self.flow_cap(ancestor, p);
                 if flow > 0 {
-                    let mut new_path = ipath.clone();
-                    new_path.push(p);
-                    s.push((ancestor, new_path));
+                    path.insert(ancestor, p);
+                    s.push(ancestor);
                 }
             }
         }
 
-        match path {
-            Some(path) => {
-                for (from, to) in path.iter().zip(path.iter().skip(1)) {
-                    self.augment(*from, *to, 1);
-                }
-
-                true
-            }
-            None => false,
+        // Did we fail to find an augmenting path?
+        if !visited.contains(&Position::Sink) {
+            return false;
         }
+
+        let mut to = Position::Sink;
+        loop {
+            let from = *path
+                .get(&to)
+                .expect("node should have a parent in the path");
+            self.augment(from, to, 1);
+
+            to = from;
+
+            if from == Position::Source {
+                break;
+            }
+        }
+
+        true
     }
 
     pub fn cut(&self, orig: &HashSet<Ni>) -> Vec<Ni> {
