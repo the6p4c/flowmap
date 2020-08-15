@@ -34,21 +34,45 @@ impl<Ni: NodeIndex + std::fmt::Debug> Flow<'_, Ni> {
     }
 
     pub fn step(&mut self) -> bool {
-        let mut visited = HashSet::new();
+        let mut before_visited = vec![false; self.network.node_count()];
+        let mut after_visited = vec![false; self.network.node_count()];
         let mut path = HashMap::new();
-        let mut s = vec![Position::Source];
+        let mut s: Vec<Position<Ni>> = vec![Position::Source];
+        let mut found_sink = false;
         while let Some(p) = s.pop() {
-            if !visited.insert(p) {
-                continue;
-            }
-
-            if p == Position::Sink {
-                break;
+            match p {
+                Position::Source => {},
+                Position::Sink => {
+                    found_sink = true;
+                    break
+                }
+                Position::BeforeNode(ni) => {
+                    if before_visited[ni.node_index()] {
+                        continue;
+                    }
+                    before_visited[ni.node_index()] = true;
+                }
+                Position::AfterNode(ni) => {
+                    if after_visited[ni.node_index()] {
+                        continue;
+                    }
+                    after_visited[ni.node_index()] = true;
+                }
             }
 
             for descendent in self.descendents(p) {
-                if visited.contains(&descendent) {
-                    continue;
+                match descendent {
+                    Position::Source | Position::Sink => {},
+                    Position::BeforeNode(ni) => {
+                        if before_visited[ni.node_index()] {
+                            continue;
+                        }
+                    }
+                    Position::AfterNode(ni) => {
+                        if after_visited[ni.node_index()] {
+                            continue;
+                        }
+                    }
                 }
 
                 let (_, cap) = self.flow_cap(p, descendent);
@@ -59,8 +83,18 @@ impl<Ni: NodeIndex + std::fmt::Debug> Flow<'_, Ni> {
             }
 
             for ancestor in self.ancestors(p) {
-                if visited.contains(&ancestor) {
-                    continue;
+                match ancestor {
+                    Position::Source | Position::Sink => {},
+                    Position::BeforeNode(ni) => {
+                        if before_visited[ni.node_index()] {
+                            continue;
+                        }
+                    }
+                    Position::AfterNode(ni) => {
+                        if after_visited[ni.node_index()] {
+                            continue;
+                        }
+                    }
                 }
 
                 let (flow, _) = self.flow_cap(ancestor, p);
@@ -72,7 +106,7 @@ impl<Ni: NodeIndex + std::fmt::Debug> Flow<'_, Ni> {
         }
 
         // Did we fail to find an augmenting path?
-        if !visited.contains(&Position::Sink) {
+        if !found_sink {
             return false;
         }
 
