@@ -1,6 +1,6 @@
 use super::*;
 use crate::boolean_network::*;
-use std::collections::{HashMap, HashSet};
+use hashbrown::{HashMap, HashSet};
 use std::iter;
 
 #[derive(Debug, Eq, PartialEq, Copy, Clone, Hash)]

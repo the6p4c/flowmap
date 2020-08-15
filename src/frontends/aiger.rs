@@ -2,7 +2,7 @@ use crate::boolean_network::*;
 use crate::flowmap::map::LUT;
 use crate::flowmap::*;
 use aiger::*;
-use std::collections::HashSet;
+use hashbrown::HashSet;
 use std::io;
 
 impl NodeIndex for Literal {
@@ -95,11 +95,11 @@ impl LogicNode {
     /// Recursively replaces the literal `n` with the specified replacement.
     fn replace(self, n: Literal, replacement: LogicNode) -> LogicNode {
         match self {
-            LogicNode::Literal(l) if l == n => replacement.clone(),
+            LogicNode::Literal(l) if l == n => replacement,
             LogicNode::Literal(l) => LogicNode::Literal(l),
             LogicNode::And(input0, input1) => {
                 let input0 = Box::new(input0.replace(n, replacement.clone()));
-                let input1 = Box::new(input1.replace(n, replacement.clone()));
+                let input1 = Box::new(input1.replace(n, replacement));
 
                 LogicNode::And(input0, input1)
             }

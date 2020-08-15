@@ -8,3 +8,4 @@ edition = "2018"
 
 [dependencies]
 aiger = "0.2.0"
+hashbrown = "0.8"

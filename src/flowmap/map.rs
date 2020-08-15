@@ -1,5 +1,5 @@
 use super::*;
-use std::collections::HashSet;
+use hashbrown::HashSet;
 
 #[derive(Debug, PartialEq, Clone)]
 pub struct LUT<Ni: NodeIndex> {

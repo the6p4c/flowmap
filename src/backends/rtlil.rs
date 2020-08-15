@@ -71,7 +71,7 @@ pub fn write_rtlil<T: io::Write, Ni: 'static + NodeIndex>(
                         WireType::Output => "output",
                     };
 
-                    (format!("{}${}", wire_type_str, i).to_string(), 0)
+                    (format!("{}${}", wire_type_str, i), 0)
                 };
 
                 Some((ni, ident, wire_type))

@@ -1,6 +1,6 @@
 use super::flow::*;
 use super::*;
-use std::collections::HashSet;
+use hashbrown::HashSet;
 
 /// Provides a topological ordering on a boolean network.
 struct TopologicalOrder<Ni: NodeIndex> {
