@@ -134,6 +134,11 @@ impl<Ni: NodeIndex + std::fmt::Debug> Path<Ni> {
     }
 }
 
+enum NetworkEdgeDirection {
+    Descendent,
+    Ancestor,
+}
+
 pub struct Flow<'a, Ni: 'static + NodeIndex + std::fmt::Debug> {
     network: &'a mut FlowMapBooleanNetwork<Ni>,
     node: Ni,
@@ -224,13 +229,13 @@ impl<Ni: NodeIndex + std::fmt::Debug> Flow<'_, Ni> {
             }
 
             for descendent in self.descendents(n) {
-                if self.is_undir_path(n, descendent, false) {
+                if self.is_undirected_path(n, descendent, NetworkEdgeDirection::Descendent) {
                     s.push(descendent);
                 }
             }
 
             for ancestor in self.ancestors(n) {
-                if self.is_undir_path(ancestor, n, true) {
+                if self.is_undirected_path(n, ancestor, NetworkEdgeDirection::Ancestor) {
                     s.push(ancestor);
                 }
             }
@@ -277,17 +282,22 @@ impl<Ni: NodeIndex + std::fmt::Debug> Flow<'_, Ni> {
         }
     }
 
+    /// Returns the current flow and current capacity (i.e. the capacity of the
+    /// edge, minus the current flow) of the provided edge.
     fn flow_cap(&self, from: Position<Ni>, to: Position<Ni>) -> (u32, u32) {
         match (from, to) {
-            (Position::Source, Position::BeforeNode(ni)) => {
-                for (ni2, flow) in &self.source {
+            (Position::Source, Position::BeforeNode(ni)) => self
+                .source
+                .iter()
+                .find_map(|(ni2, flow)| {
                     if *ni2 == ni {
                         // TODO: Handle infinite capacity better
-                        return (*flow, 1000);
+                        Some((*flow, 1000))
+                    } else {
+                        None
                     }
-                }
-                (0, 0)
-            }
+                })
+                .unwrap_or((0, 0)),
             (Position::BeforeNode(ni1), Position::AfterNode(ni2)) if ni1 == ni2 => {
                 let flow = self.network.node_value(ni1).flow;
 
@@ -296,19 +306,24 @@ impl<Ni: NodeIndex + std::fmt::Debug> Flow<'_, Ni> {
             (Position::AfterNode(ni1), Position::BeforeNode(ni2)) => {
                 *self.network.edge_value(From(ni1), To(ni2))
             }
-            (Position::AfterNode(ni), Position::Sink) => {
-                for (ni2, flow) in &self.sink {
+            (Position::AfterNode(ni), Position::Sink) => self
+                .sink
+                .iter()
+                .find_map(|(ni2, flow)| {
                     if *ni2 == ni {
                         // TODO: Handle infinite capacity better
-                        return (*flow, 1000);
+                        Some((*flow, 1000))
+                    } else {
+                        None
                     }
-                }
-                (0, 0)
-            }
+                })
+                .unwrap_or((0, 0)),
             _ => (0, 0),
         }
     }
 
+    /// "Augments" an edge, adding the provided value to the flow of forward
+    /// edges and subtracting it from the flow of backward edges.
     fn augment(&mut self, from: Position<Ni>, to: Position<Ni>, f: u32) {
         match (from, to) {
             (Position::Source, Position::BeforeNode(ni)) => {
@@ -363,26 +378,55 @@ impl<Ni: NodeIndex + std::fmt::Debug> Flow<'_, Ni> {
         }
     }
 
-    fn is_undir_path(&self, from: Position<Ni>, to: Position<Ni>, swap: bool) -> bool {
-        let (flow, cap) = self.flow_cap(from, to);
-        let is_undir_path_fwd = cap != 0;
-        let is_undir_path_bkw = flow != 0;
+    /// Returns `true` if there is an undirected edge between the provided nodes
+    /// on the residual graph, or `false` if there is no undirected edge.
+    ///
+    /// The direction of the edge on the original network must be supplied
+    /// (`network_edge_direction`) to allow the edge to be found in the network.
+    fn is_undirected_path(
+        &self,
+        from: Position<Ni>,
+        to: Position<Ni>,
+        network_edge_direction: NetworkEdgeDirection,
+    ) -> bool {
+        let (flow, cap) = match network_edge_direction {
+            NetworkEdgeDirection::Descendent => self.flow_cap(from, to),
+            NetworkEdgeDirection::Ancestor => self.flow_cap(to, from),
+        };
 
-        let x = if swap { (to, from) } else { (from, to) };
+        let is_undir_path_forward = cap != 0;
+        let is_undir_path_backward = flow != 0;
 
-        match x {
-            (Position::Source, Position::BeforeNode(_)) => is_undir_path_fwd,
-            (Position::BeforeNode(_), Position::Source) => is_undir_path_bkw,
-            (Position::AfterNode(ni1), Position::BeforeNode(ni2)) if ni1 == ni2 => {
-                is_undir_path_bkw
-            }
+        match (from, to) {
+            // In the original network, an edge between the source and a before
+            // node of a node is always from the source to the before node
+            (Position::Source, Position::BeforeNode(_)) => is_undir_path_forward,
+            (Position::BeforeNode(_), Position::Source) => is_undir_path_backward,
+
+            // In the original network, an edge between a before node and after
+            // node *for the same original node* is always from the before node
+            // to the after node
             (Position::BeforeNode(ni1), Position::AfterNode(ni2)) if ni1 == ni2 => {
-                is_undir_path_fwd
+                is_undir_path_forward
             }
-            (Position::AfterNode(_), Position::BeforeNode(_)) => is_undir_path_fwd,
-            (Position::BeforeNode(_), Position::AfterNode(_)) => is_undir_path_bkw,
-            (Position::AfterNode(_), Position::Sink) => is_undir_path_fwd,
-            (Position::Sink, Position::AfterNode(_)) => is_undir_path_bkw,
+            (Position::AfterNode(ni1), Position::BeforeNode(ni2)) if ni1 == ni2 => {
+                is_undir_path_backward
+            }
+
+            // In the original network, an edge between an after node and before
+            // node *for different original nodes* is always from the after node
+            // to the before node (the original nodes must be different here,
+            // otherwise the above cases would have caught it)
+            (Position::AfterNode(_), Position::BeforeNode(_)) => is_undir_path_forward,
+            (Position::BeforeNode(_), Position::AfterNode(_)) => is_undir_path_backward,
+
+            // In the original network, an edge between an after node and the
+            // sink is always from the after node to the sink
+            (Position::AfterNode(_), Position::Sink) => is_undir_path_forward,
+            (Position::Sink, Position::AfterNode(_)) => is_undir_path_backward,
+
+            // An edge cannot exist between any other pair of nodes in the
+            // original network
             _ => false,
         }
     }
