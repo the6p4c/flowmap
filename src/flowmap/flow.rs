@@ -36,9 +36,65 @@ impl<Ni: NodeIndex + std::fmt::Debug> Flow<'_, Ni> {
     pub fn step(&mut self) -> bool {
         let mut before_visited = vec![false; self.network.node_count()];
         let mut after_visited = vec![false; self.network.node_count()];
-        let mut path = HashMap::new();
+        let mut before_path = vec![None; self.network.node_count()];
+        let mut after_path = vec![None; self.network.node_count()];
+        let mut source_path = None;
+        let mut sink_path = None;
         let mut s: Vec<Position<Ni>> = vec![Position::Source];
         let mut found_sink = false;
+
+        let search_descendents = |flow: &Self, p: Position<Ni>, before_visited: &[bool], after_visited: &[bool], before_path: &mut [Option<Position<Ni>>], after_path: &mut [Option<Position<Ni>>], source_path: &mut Option<Position<Ni>>, sink_path: &mut Option<Position<Ni>>, s: &mut Vec<Position<Ni>>| {
+            for descendent in flow.descendents(p) {
+                let should_skip = match descendent {
+                    Position::Source | Position::Sink => false,
+                    Position::BeforeNode(ni) => before_visited[ni.node_index()],
+                    Position::AfterNode(ni) => after_visited[ni.node_index()],
+                };
+
+                if should_skip {
+                    continue;
+                }
+
+                let (_, cap) = flow.flow_cap(p, descendent);
+
+                if cap > 0 {
+                    match descendent {
+                        Position::Source => *source_path = Some(p),
+                        Position::Sink => *sink_path = Some(p),
+                        Position::BeforeNode(ni) => before_path[ni.node_index()] = Some(p),
+                        Position::AfterNode(ni) => after_path[ni.node_index()] = Some(p),
+                    };
+                    s.push(descendent);
+                }
+            }
+        };
+
+        let search_ancestors = |flow: &Self, p: Position<Ni>, before_visited: &[bool], after_visited: &[bool], before_path: &mut [Option<Position<Ni>>], after_path: &mut [Option<Position<Ni>>], source_path: &mut Option<Position<Ni>>, sink_path: &mut Option<Position<Ni>>, s: &mut Vec<Position<Ni>>| {
+            for ancestor in flow.ancestors(p) {
+                let should_skip = match ancestor {
+                    Position::Source | Position::Sink => false,
+                    Position::BeforeNode(ni) => before_visited[ni.node_index()],
+                    Position::AfterNode(ni) => after_visited[ni.node_index()],
+                };
+
+                if should_skip {
+                    continue;
+                }
+
+                let (flow, _) = flow.flow_cap(ancestor, p);
+
+                if flow > 0 {
+                    match ancestor {
+                        Position::Source => *source_path = Some(p),
+                        Position::Sink => *sink_path = Some(p),
+                        Position::BeforeNode(ni) => before_path[ni.node_index()] = Some(p),
+                        Position::AfterNode(ni) => after_path[ni.node_index()] = Some(p),
+                    };
+                    s.push(ancestor);
+                }
+            }
+        };
+
         while let Some(p) = s.pop() {
             match p {
                 Position::Source => {},
@@ -60,49 +116,8 @@ impl<Ni: NodeIndex + std::fmt::Debug> Flow<'_, Ni> {
                 }
             }
 
-            for descendent in self.descendents(p) {
-                match descendent {
-                    Position::Source | Position::Sink => {},
-                    Position::BeforeNode(ni) => {
-                        if before_visited[ni.node_index()] {
-                            continue;
-                        }
-                    }
-                    Position::AfterNode(ni) => {
-                        if after_visited[ni.node_index()] {
-                            continue;
-                        }
-                    }
-                }
-
-                let (_, cap) = self.flow_cap(p, descendent);
-                if cap > 0 {
-                    path.insert(descendent, p);
-                    s.push(descendent);
-                }
-            }
-
-            for ancestor in self.ancestors(p) {
-                match ancestor {
-                    Position::Source | Position::Sink => {},
-                    Position::BeforeNode(ni) => {
-                        if before_visited[ni.node_index()] {
-                            continue;
-                        }
-                    }
-                    Position::AfterNode(ni) => {
-                        if after_visited[ni.node_index()] {
-                            continue;
-                        }
-                    }
-                }
-
-                let (flow, _) = self.flow_cap(ancestor, p);
-                if flow > 0 {
-                    path.insert(ancestor, p);
-                    s.push(ancestor);
-                }
-            }
+            search_descendents(self, p, &before_visited, &after_visited, &mut before_path, &mut after_path, &mut source_path, &mut sink_path, &mut s);
+            search_ancestors(self, p, &before_visited, &after_visited, &mut before_path, &mut after_path, &mut source_path, &mut sink_path, &mut s);
         }
 
         // Did we fail to find an augmenting path?
@@ -110,18 +125,16 @@ impl<Ni: NodeIndex + std::fmt::Debug> Flow<'_, Ni> {
             return false;
         }
 
-        let mut to = Position::Sink;
+        let mut to: Position<Ni> = Position::Sink;
         loop {
-            let from = *path
-                .get(&to)
-                .expect("node should have a parent in the path");
+            let from = match to {
+                Position::Source => break,
+                Position::Sink => sink_path.unwrap(),
+                Position::BeforeNode(ni) => before_path[ni.node_index()].unwrap(),
+                Position::AfterNode(ni) => after_path[ni.node_index()].unwrap(),
+            };
             self.augment(from, to, 1);
-
             to = from;
-
-            if from == Position::Source {
-                break;
-            }
         }
 
         true
