@@ -1,7 +1,8 @@
 use super::*;
 use crate::boolean_network::*;
-use hashbrown::{HashMap, HashSet};
+use hashbrown::HashSet;
 use std::iter;
+use std::marker::PhantomData;
 
 #[derive(Debug, Eq, PartialEq, Copy, Clone, Hash)]
 enum Position<Ni: NodeIndex> {
@@ -9,6 +10,128 @@ enum Position<Ni: NodeIndex> {
     Sink,
     BeforeNode(Ni),
     AfterNode(Ni),
+}
+
+#[derive(Debug)]
+struct Visited<Ni: 'static + NodeIndex> {
+    source: bool,
+    sink: bool,
+    before: Vec<bool>,
+    after: Vec<bool>,
+    phantom: PhantomData<Ni>,
+}
+
+impl<Ni: 'static + NodeIndex> Visited<Ni> {
+    fn new(node_count: usize) -> Visited<Ni> {
+        let after = iter::repeat(false).take(node_count).collect::<Vec<_>>();
+
+        Visited {
+            source: false,
+            sink: false,
+            before: after.clone(),
+            after,
+            phantom: PhantomData,
+        }
+    }
+
+    /// Mark a node as visited. Returns `true` if the node has not been visited
+    /// before, or `false` if it was already marked as visited.
+    fn insert(&mut self, node: Position<Ni>) -> bool {
+        let visited_ref = match node {
+            Position::Source => &mut self.source,
+            Position::Sink => &mut self.sink,
+            Position::BeforeNode(ni) => &mut self.before[ni.node_index()],
+            Position::AfterNode(ni) => &mut self.after[ni.node_index()],
+        };
+
+        let old = *visited_ref;
+        *visited_ref = true;
+
+        !old
+    }
+
+    /// Returns `true` if the node has been marked as visited.
+    fn contains(&self, node: Position<Ni>) -> bool {
+        match node {
+            Position::Source => self.source,
+            Position::Sink => self.sink,
+            Position::BeforeNode(ni) => self.before[ni.node_index()],
+            Position::AfterNode(ni) => self.after[ni.node_index()],
+        }
+    }
+}
+
+#[derive(Debug, PartialEq)]
+struct PathStep<Ni: NodeIndex> {
+    from: Position<Ni>,
+    to: Position<Ni>,
+}
+
+#[derive(Debug)]
+struct Path<Ni: NodeIndex> {
+    source: Option<Position<Ni>>,
+    sink: Option<Position<Ni>>,
+    before: Vec<Option<Position<Ni>>>,
+    after: Vec<Option<Position<Ni>>>,
+}
+
+impl<Ni: NodeIndex + std::fmt::Debug> Path<Ni> {
+    fn new(node_count: usize) -> Path<Ni> {
+        let after = iter::repeat(None).take(node_count).collect::<Vec<_>>();
+
+        Path {
+            source: None,
+            sink: None,
+            before: after.clone(),
+            after,
+        }
+    }
+
+    /// Returns the node used to access `to` in the current path.
+    fn get_from(&self, to: Position<Ni>) -> Option<Position<Ni>> {
+        match to {
+            Position::Source => self.source,
+            Position::Sink => self.sink,
+            Position::BeforeNode(ni) => self.before[ni.node_index()],
+            Position::AfterNode(ni) => self.after[ni.node_index()],
+        }
+    }
+
+    /// Sets the "from" node for a "to" node, i.e. the node `from` which was
+    /// used to access `to`.
+    fn set_from(&mut self, from: Position<Ni>, to: Position<Ni>) {
+        let from_ref = match to {
+            Position::Source => &mut self.source,
+            Position::Sink => &mut self.sink,
+            Position::BeforeNode(ni) => &mut self.before[ni.node_index()],
+            Position::AfterNode(ni) => &mut self.after[ni.node_index()],
+        };
+
+        *from_ref = Some(from);
+    }
+
+    /// Returns an iterator over the steps in the path, working backwards from
+    /// the last node in the path `last`.
+    fn path_rev(&self, last: Position<Ni>) -> impl Iterator<Item = PathStep<Ni>> + '_ {
+        let mut prev_to = Some(last);
+
+        iter::from_fn(move || {
+            if let Some(to) = prev_to {
+                let from = self.get_from(to);
+                if let Some(from) = from {
+                    let path_step = PathStep { from: from, to: to };
+
+                    prev_to = Some(from);
+
+                    Some(path_step)
+                } else {
+                    None
+                }
+            } else {
+                None
+            }
+        })
+    }
 }
 
 pub struct Flow<'a, Ni: 'static + NodeIndex + std::fmt::Debug> {
@@ -34,107 +157,51 @@ impl<Ni: NodeIndex + std::fmt::Debug> Flow<'_, Ni> {
     }
 
     pub fn step(&mut self) -> bool {
-        let mut before_visited = vec![false; self.network.node_count()];
-        let mut after_visited = vec![false; self.network.node_count()];
-        let mut before_path = vec![None; self.network.node_count()];
-        let mut after_path = vec![None; self.network.node_count()];
-        let mut source_path = None;
-        let mut sink_path = None;
+        let mut visited = Visited::<Ni>::new(self.network.node_count());
+        let mut path = Path::new(self.network.node_count());
         let mut s: Vec<Position<Ni>> = vec![Position::Source];
-        let mut found_sink = false;
 
-        let search_descendents = |flow: &Self, p: Position<Ni>, before_visited: &[bool], after_visited: &[bool], before_path: &mut [Option<Position<Ni>>], after_path: &mut [Option<Position<Ni>>], source_path: &mut Option<Position<Ni>>, sink_path: &mut Option<Position<Ni>>, s: &mut Vec<Position<Ni>>| {
-            for descendent in flow.descendents(p) {
-                let should_skip = match descendent {
-                    Position::Source | Position::Sink => false,
-                    Position::BeforeNode(ni) => before_visited[ni.node_index()],
-                    Position::AfterNode(ni) => after_visited[ni.node_index()],
-                };
+        while let Some(p) = s.pop() {
+            if !visited.insert(p) {
+                continue;
+            }
 
-                if should_skip {
+            for descendent in self.descendents(p) {
+                if visited.contains(descendent) {
                     continue;
                 }
 
-                let (_, cap) = flow.flow_cap(p, descendent);
-
+                // Descendents are "forward" edges which can only be travelled
+                // on if the current capacity is non-zero
+                let (_, cap) = self.flow_cap(p, descendent);
                 if cap > 0 {
-                    match descendent {
-                        Position::Source => *source_path = Some(p),
-                        Position::Sink => *sink_path = Some(p),
-                        Position::BeforeNode(ni) => before_path[ni.node_index()] = Some(p),
-                        Position::AfterNode(ni) => after_path[ni.node_index()] = Some(p),
-                    };
+                    path.set_from(p, descendent);
                     s.push(descendent);
                 }
             }
-        };
 
-        let search_ancestors = |flow: &Self, p: Position<Ni>, before_visited: &[bool], after_visited: &[bool], before_path: &mut [Option<Position<Ni>>], after_path: &mut [Option<Position<Ni>>], source_path: &mut Option<Position<Ni>>, sink_path: &mut Option<Position<Ni>>, s: &mut Vec<Position<Ni>>| {
-            for ancestor in flow.ancestors(p) {
-                let should_skip = match ancestor {
-                    Position::Source | Position::Sink => false,
-                    Position::BeforeNode(ni) => before_visited[ni.node_index()],
-                    Position::AfterNode(ni) => after_visited[ni.node_index()],
-                };
-
-                if should_skip {
+            for ancestor in self.ancestors(p) {
+                if visited.contains(ancestor) {
                     continue;
                 }
 
-                let (flow, _) = flow.flow_cap(ancestor, p);
-
+                // Ancestors are "backwards" edges which can only be travelled
+                // on if the current flow is non-zero
+                let (flow, _) = self.flow_cap(ancestor, p);
                 if flow > 0 {
-                    match ancestor {
-                        Position::Source => *source_path = Some(p),
-                        Position::Sink => *sink_path = Some(p),
-                        Position::BeforeNode(ni) => before_path[ni.node_index()] = Some(p),
-                        Position::AfterNode(ni) => after_path[ni.node_index()] = Some(p),
-                    };
+                    path.set_from(p, ancestor);
                     s.push(ancestor);
                 }
             }
-        };
-
-        while let Some(p) = s.pop() {
-            match p {
-                Position::Source => {},
-                Position::Sink => {
-                    found_sink = true;
-                    break
-                }
-                Position::BeforeNode(ni) => {
-                    if before_visited[ni.node_index()] {
-                        continue;
-                    }
-                    before_visited[ni.node_index()] = true;
-                }
-                Position::AfterNode(ni) => {
-                    if after_visited[ni.node_index()] {
-                        continue;
-                    }
-                    after_visited[ni.node_index()] = true;
-                }
-            }
-
-            search_descendents(self, p, &before_visited, &after_visited, &mut before_path, &mut after_path, &mut source_path, &mut sink_path, &mut s);
-            search_ancestors(self, p, &before_visited, &after_visited, &mut before_path, &mut after_path, &mut source_path, &mut sink_path, &mut s);
         }
 
         // Did we fail to find an augmenting path?
-        if !found_sink {
+        if !visited.contains(Position::Sink) {
             return false;
         }
 
-        let mut to: Position<Ni> = Position::Sink;
-        loop {
-            let from = match to {
-                Position::Source => break,
-                Position::Sink => sink_path.unwrap(),
-                Position::BeforeNode(ni) => before_path[ni.node_index()].unwrap(),
-                Position::AfterNode(ni) => after_path[ni.node_index()].unwrap(),
-            };
-            self.augment(from, to, 1);
-            to = from;
+        for path_step in path.path_rev(Position::Sink) {
+            self.augment(path_step.from, path_step.to, 1);
         }
 
         true
@@ -145,28 +212,26 @@ impl<Ni: NodeIndex + std::fmt::Debug> Flow<'_, Ni> {
         let mut visited = HashSet::new();
         let mut s = vec![Position::Source];
         while let Some(n) = s.pop() {
-            if visited.insert(n) {
-                match n {
-                    Position::Source => {}
-                    Position::BeforeNode(n) => {
-                        reachable.insert(n);
-                    }
-                    Position::AfterNode(n) => {
-                        reachable.insert(n);
-                    }
-                    Position::Sink => continue,
-                }
+            if !visited.insert(n) {
+                continue;
+            }
 
-                for descendent in self.descendents(n) {
-                    if self.is_undir_path(n, descendent, false) {
-                        s.push(descendent);
-                    }
+            match n {
+                Position::BeforeNode(n) | Position::AfterNode(n) => {
+                    reachable.insert(n);
                 }
+                _ => {}
+            }
 
-                for ancestor in self.ancestors(n) {
-                    if self.is_undir_path(ancestor, n, true) {
-                        s.push(ancestor);
-                    }
+            for descendent in self.descendents(n) {
+                if self.is_undir_path(n, descendent, false) {
+                    s.push(descendent);
+                }
+            }
+
+            for ancestor in self.ancestors(n) {
+                if self.is_undir_path(ancestor, n, true) {
+                    s.push(ancestor);
                 }
             }
         }
@@ -320,5 +385,102 @@ impl<Ni: NodeIndex + std::fmt::Debug> Flow<'_, Ni> {
             (Position::Sink, Position::AfterNode(_)) => is_undir_path_bkw,
             _ => false,
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn visited() {
+        let mut visited = Visited::<usize>::new(2);
+
+        assert_eq!(visited.contains(Position::Source), false);
+        assert_eq!(visited.contains(Position::BeforeNode(0)), false);
+        assert_eq!(visited.contains(Position::AfterNode(0)), false);
+        assert_eq!(visited.contains(Position::BeforeNode(1)), false);
+        assert_eq!(visited.contains(Position::AfterNode(1)), false);
+        assert_eq!(visited.contains(Position::Sink), false);
+
+        assert_eq!(visited.insert(Position::Source), true);
+
+        assert_eq!(visited.contains(Position::Source), true);
+        assert_eq!(visited.contains(Position::BeforeNode(0)), false);
+        assert_eq!(visited.contains(Position::AfterNode(0)), false);
+        assert_eq!(visited.contains(Position::BeforeNode(1)), false);
+        assert_eq!(visited.contains(Position::AfterNode(1)), false);
+        assert_eq!(visited.contains(Position::Sink), false);
+
+        assert_eq!(visited.insert(Position::Source), false);
+        assert_eq!(visited.insert(Position::BeforeNode(0)), true);
+
+        assert_eq!(visited.contains(Position::BeforeNode(0)), true);
+        assert_eq!(visited.contains(Position::AfterNode(0)), false);
+        assert_eq!(visited.contains(Position::BeforeNode(1)), false);
+        assert_eq!(visited.contains(Position::AfterNode(1)), false);
+        assert_eq!(visited.contains(Position::Sink), false);
+
+        assert_eq!(visited.insert(Position::BeforeNode(0)), false);
+        assert_eq!(visited.insert(Position::AfterNode(1)), true);
+
+        assert_eq!(visited.contains(Position::BeforeNode(0)), true);
+        assert_eq!(visited.contains(Position::AfterNode(0)), false);
+        assert_eq!(visited.contains(Position::BeforeNode(1)), false);
+        assert_eq!(visited.contains(Position::AfterNode(1)), true);
+        assert_eq!(visited.contains(Position::Sink), false);
+
+        assert_eq!(visited.insert(Position::AfterNode(1)), false);
+        assert_eq!(visited.insert(Position::Sink), true);
+
+        assert_eq!(visited.contains(Position::BeforeNode(0)), true);
+        assert_eq!(visited.contains(Position::AfterNode(0)), false);
+        assert_eq!(visited.contains(Position::BeforeNode(1)), false);
+        assert_eq!(visited.contains(Position::AfterNode(1)), true);
+        assert_eq!(visited.contains(Position::Sink), true);
+
+        assert_eq!(visited.insert(Position::Sink), false);
+    }
+
+    #[test]
+    fn path() {
+        let mut path = Path::<usize>::new(9);
+
+        // Emulate the steps a DFS would take through the following graph while
+        // finding a path towards 8:
+        //      0
+        //     / \
+        //    1   4
+        //   / \   \
+        //  2  3   5 -- 8
+        //        / \
+        //       6   7
+        path.set_from(Position::BeforeNode(0), Position::BeforeNode(1));
+        path.set_from(Position::BeforeNode(0), Position::BeforeNode(4));
+        path.set_from(Position::BeforeNode(1), Position::BeforeNode(2));
+        path.set_from(Position::BeforeNode(1), Position::BeforeNode(3));
+        path.set_from(Position::BeforeNode(4), Position::BeforeNode(5));
+        path.set_from(Position::BeforeNode(5), Position::BeforeNode(6));
+        path.set_from(Position::BeforeNode(5), Position::BeforeNode(7));
+        path.set_from(Position::BeforeNode(5), Position::BeforeNode(8));
+
+        let path_rev = path.path_rev(Position::BeforeNode(8)).collect::<Vec<_>>();
+        assert_eq!(
+            path_rev,
+            vec![
+                PathStep {
+                    from: Position::BeforeNode(5),
+                    to: Position::BeforeNode(8),
+                },
+                PathStep {
+                    from: Position::BeforeNode(4),
+                    to: Position::BeforeNode(5),
+                },
+                PathStep {
+                    from: Position::BeforeNode(0),
+                    to: Position::BeforeNode(4),
+                },
+            ]
+        );
     }
 }
